@@ -1,0 +1,30 @@
+{
+  "name": "vscode-tabs",
+  "displayName": "VS Code Tabs",
+  "description": "Starts vscode-tabs.exe, which groups VS Code windows into tabs, together with VS Code.",
+  "version": "0.0.1",
+  "publisher": "kevinboss",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "VS Code Tabs",
+      "properties": {
+        "vscodeTabs.executable": {
+          "type": "string",
+          "default": "",
+          "description": "Path to vscode-tabs.exe. Empty uses ~/.local/bin/vscode-tabs.exe."
+        }
+      }
+    }
+  }
+}
