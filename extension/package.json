@@ -1,14 +1,17 @@
 {
   "name": "vscode-tabs",
   "displayName": "VS Code Tabs",
-  "description": "Starts vscode-tabs.exe, which groups VS Code windows into tabs, together with VS Code.",
-  "version": "0.0.1",
+  "description": "Groups VS Code windows into tabs in the title bar.",
+  "version": "0.0.3",
   "publisher": "kevinboss",
   "license": "UNLICENSED",
   "engines": {
     "vscode": "^1.90.0"
   },
   "main": "./extension.js",
+  "scripts": {
+    "vscode:prepublish": "dotnet publish ../src/VsCodeTabs -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o bin"
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -16,13 +19,37 @@
     "ui"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "vscodeTabs.nextTab",
+        "title": "Next Window Tab",
+        "category": "VS Code Tabs"
+      },
+      {
+        "command": "vscodeTabs.previousTab",
+        "title": "Previous Window Tab",
+        "category": "VS Code Tabs"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vscodeTabs.nextTab",
+        "key": "ctrl+tab",
+        "when": "isWindows && !inQuickOpen"
+      },
+      {
+        "command": "vscodeTabs.previousTab",
+        "key": "ctrl+shift+tab",
+        "when": "isWindows && !inQuickOpen"
+      }
+    ],
     "configuration": {
       "title": "VS Code Tabs",
       "properties": {
         "vscodeTabs.executable": {
           "type": "string",
           "default": "",
-          "description": "Path to vscode-tabs.exe. Empty uses ~/.local/bin/vscode-tabs.exe."
+          "description": "Path to vscode-tabs.exe. Empty uses the copy bundled with the extension."
         }
       }
     }

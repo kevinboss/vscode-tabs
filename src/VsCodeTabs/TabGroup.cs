@@ -96,6 +96,14 @@ internal sealed class TabGroup : IDisposable
             Activate(hwnd, focus: true);
     }
 
+    public void Cycle(int step)
+    {
+        var index = tabs.IndexOf(active);
+        if (index < 0 || tabs.Count < 2)
+            return;
+        Switch(tabs[(index + step + tabs.Count) % tabs.Count]);
+    }
+
     public void Close(IntPtr hwnd)
     {
         if (hwnd != active)

@@ -27,6 +27,7 @@ internal static class Program
         };
 
         group.Start();
+        _ = CommandPipe.Listen(group);
         Application.Run();
         tray.Visible = false;
     }
