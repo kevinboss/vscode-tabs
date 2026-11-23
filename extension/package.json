@@ -5,6 +5,7 @@
   "version": "0.0.5",
   "publisher": "kevinboss",
   "license": "UNLICENSED",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },

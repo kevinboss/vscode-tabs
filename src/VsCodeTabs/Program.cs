@@ -18,9 +18,10 @@ internal static class Program
 
         using var menu = new ContextMenuStrip();
         menu.Items.Add("Exit", null, (_, _) => Application.Exit());
+        using var icon = LoadIcon();
         using var tray = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = icon,
             Text = "VS Code Tabs",
             ContextMenuStrip = menu,
             Visible = true,
@@ -30,6 +31,12 @@ internal static class Program
         _ = CommandPipe.Listen(manager);
         Application.Run();
         tray.Visible = false;
+    }
+
+    static Icon LoadIcon()
+    {
+        using var stream = typeof(Program).Assembly.GetManifestResourceStream("app.ico");
+        return stream is null ? (Icon)SystemIcons.Application.Clone() : new Icon(stream, SystemInformation.SmallIconSize);
     }
 
     static void Fail(TabManager manager, Exception? exception)

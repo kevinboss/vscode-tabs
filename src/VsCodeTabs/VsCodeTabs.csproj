@@ -10,6 +10,11 @@
     <RootNamespace>VsCodeTabs</RootNamespace>
     <AssemblyName>vscode-tabs</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
+  </ItemGroup>
 
 </Project>
