@@ -32,7 +32,6 @@ internal sealed class TabGroup : IDisposable
     List<string> savedOrder = [];
     IntPtr active;
     Rectangle frame;
-    Rectangle maximizedOuter;
     IntPtr settling;
     long settlingUntil;
     (uint Event, IntPtr Hwnd) lastQueued;
@@ -143,8 +142,11 @@ internal sealed class TabGroup : IDisposable
         foreach (var hwnd in stashed.Where(Native.IsWindow).ToList())
         {
             Unstash(hwnd);
-            if (Native.IsZoomed(hwnd) && !maximizedOuter.IsEmpty)
-                Native.SetWindowPos(hwnd, active, maximizedOuter.X, maximizedOuter.Y, maximizedOuter.Width, maximizedOuter.Height, Native.SWP_NOACTIVATE);
+            if (Native.IsZoomed(hwnd))
+            {
+                var bounds = Win.MaximizedBounds(active != IntPtr.Zero ? active : hwnd);
+                Native.SetWindowPos(hwnd, active, bounds.X, bounds.Y, bounds.Width, bounds.Height, Native.SWP_NOACTIVATE);
+            }
             else if (!frame.IsEmpty)
                 Win.SetVisibleBounds(hwnd, frame, active, Native.SWP_NOACTIVATE);
             else
@@ -286,14 +288,14 @@ internal sealed class TabGroup : IDisposable
     void Activate(IntPtr hwnd, bool focus)
     {
         var previous = active;
+        var anchor = hwnd;
         var maximized = Native.IsZoomed(hwnd) || (frame.IsEmpty && stashed.Contains(hwnd));
         if (previous != IntPtr.Zero && previous != hwnd && Native.IsWindowVisible(previous)
             && !Native.IsIconic(previous) && !stashed.Contains(previous))
         {
+            anchor = previous;
             maximized = Native.IsZoomed(previous);
-            if (maximized)
-                maximizedOuter = Win.OuterBounds(previous);
-            else
+            if (!maximized)
                 frame = Win.VisibleBounds(previous);
         }
 
@@ -317,15 +319,11 @@ internal sealed class TabGroup : IDisposable
                     Win.SetVisibleBounds(hwnd, frame, IntPtr.Zero, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
                 Native.ShowWindow(hwnd, Native.SW_SHOWMAXIMIZED);
             }
-            else if (!maximizedOuter.IsEmpty)
-            {
-                Native.SetWindowPos(hwnd, Native.HWND_TOP, maximizedOuter.X, maximizedOuter.Y, maximizedOuter.Width, maximizedOuter.Height,
-                    Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
-            }
             else
             {
-                Native.ShowWindow(hwnd, Native.SW_SHOWNOACTIVATE);
-                Native.ShowWindow(hwnd, Native.SW_SHOWMAXIMIZED);
+                var bounds = Win.MaximizedBounds(anchor);
+                Native.SetWindowPos(hwnd, Native.HWND_TOP, bounds.X, bounds.Y, bounds.Width, bounds.Height,
+                    Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
             }
         }
         else

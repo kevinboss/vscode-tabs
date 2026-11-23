@@ -80,6 +80,17 @@ internal static class Win
 
     public static Rectangle MonitorBounds(IntPtr hwnd) => MonitorInfo(hwnd).rcMonitor.ToRectangle();
 
+    public static Rectangle MaximizedBounds(IntPtr monitorAnchor)
+    {
+        var dpi = Native.GetDpiForWindow(monitorAnchor);
+        if (dpi == 0)
+            dpi = 96;
+        var padding = Native.GetSystemMetricsForDpi(Native.SM_CXPADDEDBORDER, dpi);
+        var x = Native.GetSystemMetricsForDpi(Native.SM_CXFRAME, dpi) + padding;
+        var y = Native.GetSystemMetricsForDpi(Native.SM_CYFRAME, dpi) + padding;
+        return Rectangle.Inflate(WorkArea(monitorAnchor), x, y);
+    }
+
     static Native.MONITORINFO MonitorInfo(IntPtr hwnd)
     {
         var info = new Native.MONITORINFO { cbSize = Marshal.SizeOf<Native.MONITORINFO>() };
