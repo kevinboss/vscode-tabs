@@ -7,44 +7,29 @@ internal sealed class TabGroup : IDisposable
     const int DefaultTitleBarHeightDip = 29;
     const int DefaultLeftInsetDip = 38;
     const int DefaultRightInsetDip = 280;
-    const int IdleSecondsBeforeExit = 10;
-    const int RememberedFolders = 100;
     const int MeasureAttempts = 10;
     const int ParkingGap = 1000;
     const int SettleMilliseconds = 2000;
+    const int QuietMilliseconds = 300;
+    const int CloseQuietMilliseconds = 10000;
 
-    static readonly string StateDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "vscode-tabs");
-
+    readonly TabManager manager;
     TabStrip strip;
     readonly List<IntPtr> tabs = [];
     readonly HashSet<IntPtr> stashed = [];
     readonly Dictionary<IntPtr, string> identities = [];
-    readonly List<IntPtr> hooks = [];
-    readonly Queue<(uint Event, IntPtr Hwnd)> pending = new();
-    readonly Native.WinEventProc proc;
-    readonly System.Windows.Forms.Timer pruneTimer = new() { Interval = 1000 };
     readonly System.Windows.Forms.Timer measureTimer = new() { Interval = 300 };
-    readonly string orderPath = Path.Combine(StateDirectory, "order.txt");
 
-    SynchronizationContext? context;
-    readonly Dictionary<bool, TitleBar> titleBars = [];
-    List<string> savedOrder = [];
     IntPtr active;
     Rectangle frame;
     IntPtr settling;
     long settlingUntil;
-    (uint Event, IntPtr Hwnd) lastQueued;
-    int idleSeconds;
     int failedMeasurements;
-    bool draining;
-    bool drainPosted;
 
-    public TabGroup()
+    public TabGroup(TabManager manager)
     {
+        this.manager = manager;
         strip = new TabStrip(this);
-        proc = OnWinEvent;
-        pruneTimer.Tick += (_, _) => Prune();
         measureTimer.Tick += (_, _) =>
         {
             measureTimer.Stop();
@@ -56,35 +41,20 @@ internal sealed class TabGroup : IDisposable
 
     public IntPtr Active => active;
 
-    public void Start()
-    {
-        _ = strip.Handle;
-        context = new WindowsFormsSynchronizationContext();
-        savedOrder = File.Exists(orderPath) ? File.ReadAllLines(orderPath).ToList() : [];
+    public TabStrip Strip => strip;
 
-        var shown = new List<IntPtr>();
-        Native.EnumWindows((hwnd, _) =>
+    public bool Contains(IntPtr hwnd) => tabs.Contains(hwnd);
+
+    public void Load(IEnumerable<IntPtr> windows)
+    {
+        foreach (var hwnd in windows)
         {
-            if (!Native.IsWindowVisible(hwnd) || !Win.IsVsCodeMain(hwnd, includeStashed: true))
-                return true;
+            Transitions.Enable(hwnd);
+            tabs.Add(hwnd);
             if (Win.IsStashed(hwnd))
                 stashed.Add(hwnd);
-            else
-                shown.Add(hwnd);
-            tabs.Add(hwnd);
-            return true;
-        }, IntPtr.Zero);
+        }
         SortTabs();
-
-        const uint flags = Native.WINEVENT_OUTOFCONTEXT | Native.WINEVENT_SKIPOWNPROCESS;
-        hooks.Add(Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_MINIMIZEEND, IntPtr.Zero, proc, 0, 0, flags));
-        hooks.Add(Native.SetWinEventHook(Native.EVENT_OBJECT_DESTROY, Native.EVENT_OBJECT_NAMECHANGE, IntPtr.Zero, proc, 0, 0, flags));
-        pruneTimer.Start();
-
-        var foreground = Native.GetForegroundWindow();
-        var first = shown.Contains(foreground) ? foreground : shown.Concat(stashed).FirstOrDefault();
-        if (first != IntPtr.Zero)
-            Activate(first, focus: false);
     }
 
     public void Switch(IntPtr hwnd)
@@ -107,6 +77,8 @@ internal sealed class TabGroup : IDisposable
     {
         if (hwnd != active)
             Activate(hwnd, focus: true);
+        if (tabs.Count > 1)
+            manager.Transitions.Hold(hwnd, CloseQuietMilliseconds);
         Native.PostMessage(hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
     }
 
@@ -119,8 +91,18 @@ internal sealed class TabGroup : IDisposable
         strip.Invalidate();
     }
 
+    public void MoveTo(IntPtr hwnd, int index)
+    {
+        var from = tabs.IndexOf(hwnd);
+        if (from >= 0 && index >= 0 && index < tabs.Count && from != index)
+            Move(from, index);
+    }
+
+    public void BeginDrag(IntPtr hwnd, Point grab) => manager.BeginDrag(this, hwnd, grab);
+
     public void NewTab()
     {
+        manager.MarkFocused(this);
         var executable = active != IntPtr.Zero ? Win.ProcessPath(active) : null;
         Native.AllowSetForegroundWindow(Native.ASFW_ANY);
         var start = new ProcessStartInfo(executable ?? "code", "--new-window")
@@ -156,137 +138,62 @@ internal sealed class TabGroup : IDisposable
 
     public void Dispose()
     {
-        foreach (var hook in hooks)
-            Native.UnhookWinEvent(hook);
-        hooks.Clear();
-        pruneTimer.Dispose();
         measureTimer.Dispose();
         RestoreAll();
         strip.Dispose();
     }
 
-    void OnWinEvent(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+    public void OnForeground(IntPtr hwnd)
     {
-        if (idObject != Native.OBJID_WINDOW || idChild != 0 || hwnd == IntPtr.Zero)
-            return;
-
-        switch (evt)
-        {
-            case Native.EVENT_SYSTEM_FOREGROUND:
-                break;
-            case Native.EVENT_OBJECT_SHOW:
-                if (tabs.Contains(hwnd))
-                    return;
-                break;
-            case Native.EVENT_SYSTEM_MOVESIZESTART:
-            case Native.EVENT_SYSTEM_MINIMIZESTART:
-            case Native.EVENT_SYSTEM_MINIMIZEEND:
-            case Native.EVENT_OBJECT_DESTROY:
-            case Native.EVENT_OBJECT_LOCATIONCHANGE:
-            case Native.EVENT_OBJECT_NAMECHANGE:
-                if (!tabs.Contains(hwnd))
-                    return;
-                break;
-            default:
-                return;
-        }
-
-        if (pending.Count > 0 && lastQueued == (evt, hwnd))
-            return;
-        lastQueued = (evt, hwnd);
-        pending.Enqueue(lastQueued);
-
-        if (!drainPosted && context is not null)
-        {
-            drainPosted = true;
-            context.Post(_ => Drain(), null);
-        }
+        if (hwnd == active)
+            PlaceStrip();
+        else
+            Activate(hwnd, focus: false);
     }
 
-    void Drain()
+    public void OnMoveSizeStart() => settling = IntPtr.Zero;
+
+    public void OnLocationChange(IntPtr hwnd)
     {
-        drainPosted = false;
-        if (draining)
+        if (hwnd != active || stashed.Contains(hwnd))
             return;
-        draining = true;
-        try
+        if (Native.IsWindowVisible(hwnd) && !Native.IsIconic(hwnd) && !Native.IsZoomed(hwnd))
         {
-            while (pending.TryDequeue(out var item))
-                Handle(item.Event, item.Hwnd);
+            var bounds = Win.VisibleBounds(hwnd);
+            if (hwnd == settling && Environment.TickCount64 < settlingUntil && !frame.IsEmpty)
+            {
+                if (bounds != frame)
+                    Win.SetVisibleBounds(hwnd, frame, IntPtr.Zero, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+            }
+            else
+            {
+                frame = bounds;
+            }
         }
-        finally
-        {
-            draining = false;
-        }
+        PlaceStrip();
     }
 
-    void Handle(uint evt, IntPtr hwnd)
+    public void OnMinimize(IntPtr hwnd)
     {
-        switch (evt)
-        {
-            case Native.EVENT_SYSTEM_FOREGROUND:
-                if (Native.GetForegroundWindow() != hwnd)
-                    return;
-                if (hwnd == active)
-                    PlaceStrip();
-                else if (tabs.Contains(hwnd) || Win.IsVsCodeMain(hwnd))
-                    Activate(hwnd, focus: false);
-                else if (active != IntPtr.Zero)
-                    ScheduleMeasure();
-                break;
-
-            case Native.EVENT_OBJECT_SHOW:
-                if (!tabs.Contains(hwnd) && Native.IsWindowVisible(hwnd) && Win.IsVsCodeMain(hwnd))
-                    Activate(hwnd, focus: true);
-                break;
-
-            case Native.EVENT_OBJECT_DESTROY:
-                Remove(hwnd);
-                break;
-
-            case Native.EVENT_SYSTEM_MOVESIZESTART:
-                settling = IntPtr.Zero;
-                break;
-
-            case Native.EVENT_OBJECT_LOCATIONCHANGE:
-                if (hwnd != active || stashed.Contains(hwnd))
-                    return;
-                if (Native.IsWindowVisible(hwnd) && !Native.IsIconic(hwnd) && !Native.IsZoomed(hwnd))
-                {
-                    var bounds = Win.VisibleBounds(hwnd);
-                    if (hwnd == settling && Environment.TickCount64 < settlingUntil && !frame.IsEmpty)
-                    {
-                        if (bounds != frame)
-                            Win.SetVisibleBounds(hwnd, frame, IntPtr.Zero, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
-                    }
-                    else
-                    {
-                        frame = bounds;
-                    }
-                }
-                PlaceStrip();
-                break;
-
-            case Native.EVENT_SYSTEM_MINIMIZESTART:
-            case Native.EVENT_SYSTEM_MINIMIZEEND:
-                if (hwnd == active)
-                    PlaceStrip();
-                break;
-
-            case Native.EVENT_OBJECT_NAMECHANGE:
-                if (identities.GetValueOrDefault(hwnd) != TitleParser.Identity(Win.Title(hwnd)))
-                {
-                    SortTabs();
-                    SaveOrder();
-                    PlaceStrip();
-                }
-                strip.Invalidate();
-                break;
-        }
+        if (hwnd == active)
+            PlaceStrip();
     }
 
-    void Activate(IntPtr hwnd, bool focus)
+    public void OnNameChange(IntPtr hwnd)
     {
+        var identity = TitleParser.Identity(Win.Title(hwnd));
+        if (identities.GetValueOrDefault(hwnd) != identity)
+        {
+            identities[hwnd] = identity;
+            SaveOrder();
+            PlaceStrip();
+        }
+        strip.Invalidate();
+    }
+
+    public void Activate(IntPtr hwnd, bool focus)
+    {
+        manager.Transitions.Hold(hwnd, QuietMilliseconds);
         var previous = active;
         var anchor = hwnd;
         var maximized = Native.IsZoomed(hwnd) || (frame.IsEmpty && stashed.Contains(hwnd));
@@ -301,8 +208,9 @@ internal sealed class TabGroup : IDisposable
 
         if (!tabs.Contains(hwnd))
         {
+            manager.Transitions.ReleaseAfter(hwnd, QuietMilliseconds);
             tabs.Add(hwnd);
-            SortTabs();
+            identities[hwnd] = TitleParser.Identity(Win.Title(hwnd));
             SaveOrder();
             settling = hwnd;
             settlingUntil = Environment.TickCount64 + SettleMilliseconds;
@@ -374,7 +282,19 @@ internal sealed class TabGroup : IDisposable
         return new Point(monitor.Left + (monitor.Width - width) / 2, SystemInformation.VirtualScreen.Bottom + ParkingGap);
     }
 
-    void Remove(IntPtr hwnd)
+    public void Remove(IntPtr hwnd)
+    {
+        if (!tabs.Contains(hwnd))
+            return;
+        Win.Forget(hwnd);
+        if (strip.IsDisposed)
+            strip = new TabStrip(this);
+        Drop(hwnd, closed: true);
+    }
+
+    public void Release(IntPtr hwnd) => Drop(hwnd, closed: false);
+
+    void Drop(IntPtr hwnd, bool closed)
     {
         var index = tabs.IndexOf(hwnd);
         if (index < 0)
@@ -383,29 +303,61 @@ internal sealed class TabGroup : IDisposable
         tabs.RemoveAt(index);
         stashed.Remove(hwnd);
         identities.Remove(hwnd);
-        Win.Forget(hwnd);
-        if (strip.IsDisposed)
-            strip = new TabStrip(this);
 
         if (hwnd == active)
         {
-            active = IntPtr.Zero;
+            if (closed || tabs.Count == 0)
+                active = IntPtr.Zero;
             if (tabs.Count > 0)
-                Activate(tabs[Math.Min(index, tabs.Count - 1)], focus: true);
+                Activate(tabs[Math.Min(index, tabs.Count - 1)], focus: closed);
         }
 
         PlaceStrip();
         strip.Invalidate();
     }
 
-    void Prune()
+    public void Float(IntPtr hwnd, Rectangle bounds)
     {
-        foreach (var hwnd in tabs.Where(hwnd => !Native.IsWindow(hwnd)).ToList())
-            Remove(hwnd);
+        if (!tabs.Contains(hwnd))
+        {
+            tabs.Add(hwnd);
+            identities[hwnd] = TitleParser.Identity(Win.Title(hwnd));
+        }
+        active = hwnd;
+        settling = IntPtr.Zero;
+        manager.Transitions.Hold(hwnd, QuietMilliseconds);
+        Unstash(hwnd);
+        strip.Attach(hwnd);
+        if (Native.IsIconic(hwnd) || Native.IsZoomed(hwnd))
+            Native.ShowWindow(hwnd, Native.SW_SHOWNOACTIVATE);
+        frame = bounds;
+        Win.SetVisibleBounds(hwnd, frame, IntPtr.Zero, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+        Native.SetForegroundWindow(hwnd);
+        PlaceStrip();
+        strip.Invalidate();
+    }
 
-        idleSeconds = tabs.Count == 0 ? idleSeconds + 1 : 0;
-        if (idleSeconds >= IdleSecondsBeforeExit)
-            Application.Exit();
+    public void Insert(IntPtr hwnd, int index)
+    {
+        tabs.Insert(Math.Clamp(index, 0, tabs.Count), hwnd);
+        identities[hwnd] = TitleParser.Identity(Win.Title(hwnd));
+        SaveOrder();
+        Activate(hwnd, focus: true);
+    }
+
+    public bool AcceptsDrop(Point cursor)
+    {
+        var bounds = strip.ScreenBounds;
+        if (active == IntPtr.Zero || bounds.IsEmpty)
+            return false;
+        return Rectangle.Inflate(bounds, 0, Dip(8, Win.Scale(active))).Contains(cursor);
+    }
+
+    public Size RestoredSize(IntPtr hwnd)
+    {
+        var work = Win.WorkArea(hwnd);
+        var size = frame.IsEmpty ? new Size(work.Width * 2 / 3, work.Height * 2 / 3) : frame.Size;
+        return new Size(Math.Min(size.Width, work.Width), Math.Min(size.Height, work.Height));
     }
 
     void PlaceStrip()
@@ -427,12 +379,7 @@ internal sealed class TabGroup : IDisposable
         }
 
         var scale = Win.Scale(active);
-        var bar = titleBars.TryGetValue(zoomed, out var measured) ? measured : new TitleBar(
-            zoomed ? 0 : 1,
-            Dip(DefaultTitleBarHeightDip, scale),
-            Dip(DefaultLeftInsetDip, scale),
-            Dip(DefaultRightInsetDip, scale),
-            Color.Empty);
+        var bar = Bar(zoomed, scale);
         var left = window.Left + bar.LeftInset;
         var available = window.Right - bar.RightInset - left;
         var bounds = new Rectangle(left, window.Top + bar.Top, Math.Min(available, strip.ContentWidth()), bar.Height);
@@ -442,7 +389,15 @@ internal sealed class TabGroup : IDisposable
         ScheduleMeasure();
     }
 
-    void ScheduleMeasure()
+    public TitleBar Bar(bool zoomed, float scale) =>
+        manager.TitleBars.TryGetValue(zoomed, out var measured) ? measured : new TitleBar(
+            zoomed ? 0 : 1,
+            Dip(DefaultTitleBarHeightDip, scale),
+            Dip(DefaultLeftInsetDip, scale),
+            Dip(DefaultRightInsetDip, scale),
+            Color.Empty);
+
+    public void ScheduleMeasure()
     {
         failedMeasurements = 0;
         measureTimer.Stop();
@@ -462,9 +417,9 @@ internal sealed class TabGroup : IDisposable
             return;
         }
         strip.ApplyTheme(bar.Background);
-        if (titleBars.TryGetValue(zoomed, out var known) && known == bar)
+        if (manager.TitleBars.TryGetValue(zoomed, out var known) && known == bar)
             return;
-        titleBars[zoomed] = bar;
+        manager.TitleBars[zoomed] = bar;
         PlaceStrip();
         measureTimer.Stop();
     }
@@ -475,22 +430,11 @@ internal sealed class TabGroup : IDisposable
     {
         foreach (var hwnd in tabs)
             identities[hwnd] = TitleParser.Identity(Win.Title(hwnd));
-        var sorted = tabs.OrderBy(hwnd => Rank(identities[hwnd])).ToList();
+        var sorted = tabs.OrderBy(hwnd => manager.Rank(identities[hwnd])).ToList();
         tabs.Clear();
         tabs.AddRange(sorted);
     }
 
-    int Rank(string identity)
-    {
-        var index = savedOrder.IndexOf(identity);
-        return index < 0 ? int.MaxValue : index;
-    }
-
-    void SaveOrder()
-    {
-        var current = tabs.Select(hwnd => identities.GetValueOrDefault(hwnd) ?? TitleParser.Identity(Win.Title(hwnd))).ToList();
-        savedOrder = current.Concat(savedOrder.Except(current)).Distinct().Take(RememberedFolders).ToList();
-        Directory.CreateDirectory(StateDirectory);
-        File.WriteAllLines(orderPath, savedOrder);
-    }
+    void SaveOrder() =>
+        manager.SaveOrder(tabs.Select(hwnd => identities.GetValueOrDefault(hwnd) ?? TitleParser.Identity(Win.Title(hwnd))));
 }

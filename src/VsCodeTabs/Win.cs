@@ -12,16 +12,17 @@ internal static class Win
     static readonly Dictionary<IntPtr, FrameMargins> margins = [];
     static FrameMargins lastMargins;
 
-    public static bool IsVsCodeMain(IntPtr hwnd, bool includeStashed = false)
+    public static bool IsVsCodeMain(IntPtr hwnd, bool includeStashed = false) =>
+        IsVsCodeFrame(hwnd) && (includeStashed || !IsStashed(hwnd)) && !IsCloaked(hwnd);
+
+    public static bool IsVsCodeFrame(IntPtr hwnd)
     {
         if (!Native.IsWindow(hwnd) || ClassName(hwnd) != "Chrome_WidgetWin_1")
             return false;
         if (Native.GetWindow(hwnd, Native.GW_OWNER) != IntPtr.Zero)
             return false;
         var style = Native.GetWindowLongPtr(hwnd, Native.GWL_STYLE).ToInt64();
-        if ((style & Native.WS_THICKFRAME) == 0 || (IsStashed(hwnd) && !includeStashed))
-            return false;
-        if (IsCloaked(hwnd))
+        if ((style & Native.WS_THICKFRAME) == 0)
             return false;
         return string.Equals(Path.GetFileName(ProcessPath(hwnd)), "Code.exe", StringComparison.OrdinalIgnoreCase);
     }

@@ -23,6 +23,7 @@ internal sealed class TabStrip : Form
     int dragIndex = -1;
     Point dragOrigin;
     bool dragging;
+    int dropIndex = -1;
     readonly System.Windows.Forms.Timer pollTimer = new() { Interval = 30 };
     bool passThrough;
     IntPtr owner;
@@ -67,6 +68,10 @@ internal sealed class TabStrip : Form
     }
 
     protected override bool ShowWithoutActivation => true;
+
+    public Palette Colors => palette;
+
+    public float DpiScale => scale;
 
     public Rectangle ScreenBounds
     {
@@ -196,6 +201,33 @@ internal sealed class TabStrip : Form
         if (hoverPlus)
             FillRounded(graphics, palette.ButtonHover, plus);
         DrawGlyph(graphics, plus, palette.InactiveText, cross: false);
+
+        if (dropIndex >= 0 && layout.Count > 0)
+        {
+            var edge = dropIndex < layout.Count ? layout[dropIndex].Tab.Left - S(1) : layout[^1].Tab.Right + S(1);
+            var tab = layout[0].Tab;
+            using var marker = new SolidBrush(palette.ActiveText);
+            graphics.FillRectangle(marker, edge - S(1), tab.Top, Math.Max(2, S(2)), tab.Height);
+        }
+    }
+
+    public void SetDropIndex(int index)
+    {
+        if (index == dropIndex)
+            return;
+        dropIndex = index;
+        Invalidate();
+    }
+
+    public Rectangle TabScreenBounds(IntPtr hwnd)
+    {
+        Arrange();
+        var index = layout.FindIndex(entry => entry.Hwnd == hwnd);
+        if (index < 0)
+            return Rectangle.Empty;
+        var tab = layout[index].Tab;
+        var origin = ScreenBounds.Location;
+        return new Rectangle(origin.X + tab.X, origin.Y + tab.Y, tab.Width, tab.Height);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -218,18 +250,12 @@ internal sealed class TabStrip : Form
         Arrange();
         if (dragIndex >= 0 && e.Button == MouseButtons.Left)
         {
-            if (!dragging && Math.Abs(e.X - dragOrigin.X) > S(4))
-                dragging = true;
-            if (dragging && layout.Count > 0)
+            if (!dragging && dragIndex < layout.Count
+                && (Math.Abs(e.X - dragOrigin.X) > S(4) || Math.Abs(e.Y - dragOrigin.Y) > S(4)))
             {
-                var target = layout.FindIndex(entry => e.X < entry.Tab.Right);
-                if (target < 0)
-                    target = layout.Count - 1;
-                if (target != dragIndex)
-                {
-                    group.Move(dragIndex, target);
-                    dragIndex = target;
-                }
+                dragging = true;
+                var tab = layout[dragIndex].Tab;
+                group.BeginDrag(layout[dragIndex].Hwnd, new Point(dragOrigin.X - tab.Left, dragOrigin.Y - tab.Top));
             }
             return;
         }
@@ -368,6 +394,16 @@ internal sealed class TabStrip : Form
 
     int IndexAt(Point point) => layout.FindIndex(entry => entry.Tab.Contains(point));
 
+    public int IndexAtScreen(int screenX, bool insert)
+    {
+        Arrange();
+        var x = screenX - ScreenBounds.Left;
+        var index = layout.FindIndex(entry => x < (insert ? entry.Tab.Left + entry.Tab.Width / 2 : entry.Tab.Right));
+        if (index >= 0)
+            return index;
+        return insert ? layout.Count : Math.Max(0, layout.Count - 1);
+    }
+
     void FillRounded(Graphics graphics, Color color, Rectangle bounds)
     {
         var diameter = S(4) * 2;
@@ -409,6 +445,6 @@ internal sealed class TabStrip : Form
 
     int S(int value) => (int)Math.Round(value * scale);
 
-    static (Font Name, Font Detail) CreateFonts(float scale) =>
+    public static (Font Name, Font Detail) CreateFonts(float scale) =>
         (new Font("Segoe UI", 13f * scale, GraphicsUnit.Pixel), new Font("Segoe UI", 12f * scale, GraphicsUnit.Pixel));
 }

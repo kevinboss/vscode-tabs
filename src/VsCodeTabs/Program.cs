@@ -12,9 +12,9 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
 
-        using var group = new TabGroup();
-        Application.ThreadException += (_, e) => Fail(group, e.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => Fail(group, e.ExceptionObject as Exception);
+        using var manager = new TabManager();
+        Application.ThreadException += (_, e) => Fail(manager, e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Fail(manager, e.ExceptionObject as Exception);
 
         using var menu = new ContextMenuStrip();
         menu.Items.Add("Exit", null, (_, _) => Application.Exit());
@@ -26,13 +26,13 @@ internal static class Program
             Visible = true,
         };
 
-        group.Start();
-        _ = CommandPipe.Listen(group);
+        manager.Start();
+        _ = CommandPipe.Listen(manager);
         Application.Run();
         tray.Visible = false;
     }
 
-    static void Fail(TabGroup group, Exception? exception)
+    static void Fail(TabManager manager, Exception? exception)
     {
         try
         {
@@ -42,7 +42,7 @@ internal static class Program
         }
         finally
         {
-            group.RestoreAll();
+            manager.RestoreAll();
             Application.Exit();
         }
     }

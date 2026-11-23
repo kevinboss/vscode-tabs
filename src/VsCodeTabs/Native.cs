@@ -9,6 +9,7 @@ internal static class Native
     public const uint EVENT_SYSTEM_MOVESIZESTART = 0x000A;
     public const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016;
     public const uint EVENT_SYSTEM_MINIMIZEEND = 0x0017;
+    public const uint EVENT_OBJECT_CREATE = 0x8000;
     public const uint EVENT_OBJECT_DESTROY = 0x8001;
     public const uint EVENT_OBJECT_SHOW = 0x8002;
     public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
@@ -26,6 +27,7 @@ internal static class Native
     public const uint SWP_SHOWWINDOW = 0x0040;
     public static readonly IntPtr HWND_TOP = IntPtr.Zero;
     public static readonly IntPtr HWND_BOTTOM = new(1);
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
 
@@ -44,6 +46,7 @@ internal static class Native
     public const uint WM_CLOSE = 0x0010;
     public const int WS_EX_LAYERED = 0x00080000;
     public const int WS_EX_TRANSPARENT = 0x00000020;
+    public const int WS_EX_TOPMOST = 0x00000008;
     public const uint LWA_ALPHA = 0x00000002;
     public const int WM_MOUSEACTIVATE = 0x0021;
     public const int MA_NOACTIVATE = 3;
@@ -52,10 +55,14 @@ internal static class Native
     public const int SM_CYFRAME = 33;
     public const int SM_CXPADDEDBORDER = 92;
 
+    public const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     public const int DWMWA_CLOAKED = 14;
     public const uint MONITOR_DEFAULTTONEAREST = 2;
     public const uint ASFW_ANY = 0xFFFFFFFF;
+    public const int VK_LBUTTON = 0x01;
+    public const int VK_RBUTTON = 0x02;
+    public const int VK_ESCAPE = 0x1B;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
@@ -157,6 +164,9 @@ internal static class Native
     public static extern bool GetCursorPos(out Point point);
 
     [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int key);
+
+    [DllImport("user32.dll")]
     public static extern bool PrintWindow(IntPtr hwnd, IntPtr dc, uint flags);
 
     [DllImport("user32.dll")]
@@ -176,4 +186,7 @@ internal static class Native
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

@@ -44,9 +44,11 @@ function activate(context) {
   spawn(executable, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
+const pipeName = () => `\\\\.\\pipe\\vscode-tabs-${os.userInfo().username}`;
+
 function send(command, fallback) {
   let connected = false;
-  const socket = net.connect(`\\\\.\\pipe\\vscode-tabs-${os.userInfo().username}`);
+  const socket = net.connect(pipeName());
   socket.on('connect', () => {
     connected = true;
   });
@@ -85,4 +87,22 @@ async function promptForSettings(context) {
   }
 }
 
-module.exports = { activate, deactivate() {} };
+function deactivate() {
+  if (process.platform !== 'win32') {
+    return undefined;
+  }
+  const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  return new Promise((resolve) => {
+    const timeout = setTimeout(resolve, 500);
+    const done = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    const socket = net.connect(pipeName());
+    socket.on('error', done);
+    socket.on('close', done);
+    socket.end(`closing ${folder}\n`);
+  });
+}
+
+module.exports = { activate, deactivate };
