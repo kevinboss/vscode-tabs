@@ -9,6 +9,8 @@ internal sealed class TabStrip : Form
 
     const TextFormatFlags MeasureFormat = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
 
+    const int AppIconSlotDip = 35;
+
     readonly TabGroup group;
     readonly ToolTip toolTip = new() { ShowAlways = true };
     readonly List<(IntPtr Hwnd, Rectangle Tab, Rectangle Close, TabLabel Label)> layout = [];
@@ -28,6 +30,9 @@ internal sealed class TabStrip : Form
     bool passThrough;
     IntPtr owner;
     Rectangle placed;
+    int iconArea;
+    Icon? appIcon;
+    (string Path, int Size) appIconKey;
     string toolTipText = "";
 
     public TabStrip(TabGroup group)
@@ -84,6 +89,15 @@ internal sealed class TabStrip : Form
         }
     }
 
+    public Rectangle TabAreaScreenBounds
+    {
+        get
+        {
+            var bounds = ScreenBounds;
+            return bounds.IsEmpty ? bounds : Rectangle.FromLTRB(bounds.Left + iconArea, bounds.Top, bounds.Right, bounds.Bottom);
+        }
+    }
+
     public void Attach(IntPtr parent)
     {
         var handle = Handle;
@@ -107,15 +121,43 @@ internal sealed class TabStrip : Form
         Native.SetLayeredWindowAttributes(Handle, 0, 255, Native.LWA_ALPHA);
     }
 
-    public void Place(Rectangle bounds, float newScale)
+    public IntPtr AttachedTo => owner;
+
+    public void Mirror(TabStrip source, IntPtr parent)
     {
-        if (Math.Abs(newScale - scale) > 0.001f)
+        SetScale(source.scale);
+        iconArea = source.iconArea;
+        placed = source.placed;
+        if (palette != source.palette)
         {
-            scale = newScale;
-            nameFont.Dispose();
-            detailFont.Dispose();
-            (nameFont, detailFont) = CreateFonts(scale);
+            palette = source.palette;
+            BackColor = palette.Background;
         }
+        Attach(parent);
+        Native.GetWindowRect(source.Handle, out var rect);
+        var bounds = rect.ToRectangle();
+        var origin = bounds.Location;
+        Native.ScreenToClient(source.owner, ref origin);
+        Native.SetWindowPos(Handle, Native.HWND_TOP, origin.X, origin.Y, bounds.Width, bounds.Height,
+            Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+        Invalidate();
+        Update();
+    }
+
+    void SetScale(float newScale)
+    {
+        if (Math.Abs(newScale - scale) <= 0.001f)
+            return;
+        scale = newScale;
+        nameFont.Dispose();
+        detailFont.Dispose();
+        (nameFont, detailFont) = CreateFonts(scale);
+    }
+
+    public void Place(Rectangle bounds, float newScale, int newIconArea)
+    {
+        iconArea = newIconArea;
+        SetScale(newScale);
         placed = bounds;
         if (owner != IntPtr.Zero)
             Attach(owner);
@@ -133,11 +175,15 @@ internal sealed class TabStrip : Form
             return;
         if (IsHandleCreated && Native.GetParent(Handle) == owner)
             return;
-        Place(placed, scale);
+        Place(placed, scale, iconArea);
     }
 
     public void HideStrip()
     {
+        hoverIndex = -1;
+        hoverClose = false;
+        hoverPlus = false;
+        dropIndex = -1;
         if (Native.IsWindowVisible(Handle))
             Native.ShowWindow(Handle, Native.SW_HIDE);
     }
@@ -167,6 +213,7 @@ internal sealed class TabStrip : Form
         Arrange();
         var graphics = e.Graphics;
         graphics.Clear(palette.Background);
+        DrawAppIcon(graphics);
 
         for (var i = 0; i < layout.Count; i++)
         {
@@ -315,6 +362,7 @@ internal sealed class TabStrip : Form
             detailFont.Dispose();
             toolTip.Dispose();
             pollTimer.Dispose();
+            appIcon?.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -348,12 +396,6 @@ internal sealed class TabStrip : Form
         Native.SetWindowLongPtr(Handle, Native.GWL_EXSTYLE, new IntPtr(style));
     }
 
-    public int ContentWidth()
-    {
-        var labels = group.Tabs.Select(hwnd => TitleParser.Label(Win.Title(hwnd)));
-        return S(4) + labels.Sum(label => TabWidth(label) + S(2)) + S(4) + S(22) + S(6);
-    }
-
     void Arrange()
     {
         layout.Clear();
@@ -366,11 +408,11 @@ internal sealed class TabStrip : Form
         var labels = tabs.Select(hwnd => TitleParser.Label(Win.Title(hwnd))).ToList();
         var widths = labels.Select(TabWidth).ToList();
 
-        var available = Math.Max(0, ClientSize.Width - plusSize - S(12) - gap * tabs.Count);
+        var available = Math.Max(0, ClientSize.Width - iconArea - plusSize - S(12) - gap * tabs.Count);
         if (widths.Count > 0 && widths.Sum() > available)
             widths = Enumerable.Repeat(available / widths.Count, widths.Count).ToList();
 
-        var x = S(4);
+        var x = iconArea + S(4);
         for (var i = 0; i < tabs.Count; i++)
         {
             var tab = new Rectangle(x, top, widths[i], height);
@@ -380,6 +422,21 @@ internal sealed class TabStrip : Form
         }
 
         plus = new Rectangle(x + S(4), (ClientSize.Height - plusSize) / 2, plusSize, plusSize);
+    }
+
+    void DrawAppIcon(Graphics graphics)
+    {
+        var size = S(16);
+        if (iconArea < size || owner == IntPtr.Zero || Win.ProcessPath(owner) is not { } path)
+            return;
+        if (appIconKey != (path, size))
+        {
+            appIcon?.Dispose();
+            appIcon = Icon.ExtractIcon(path, 0, size);
+            appIconKey = (path, size);
+        }
+        if (appIcon is not null)
+            graphics.DrawIcon(appIcon, new Rectangle((S(AppIconSlotDip) - size) / 2, (ClientSize.Height - size) / 2, size, size));
     }
 
     int TabWidth(TabLabel label) => Math.Clamp(PreferredWidth(label) + S(18) + S(18), S(110), S(320));

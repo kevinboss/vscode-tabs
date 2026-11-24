@@ -15,6 +15,7 @@ internal sealed class TabGroup : IDisposable
 
     readonly TabManager manager;
     TabStrip strip;
+    TabStrip spare;
     readonly List<IntPtr> tabs = [];
     readonly HashSet<IntPtr> stashed = [];
     readonly Dictionary<IntPtr, string> identities = [];
@@ -30,6 +31,7 @@ internal sealed class TabGroup : IDisposable
     {
         this.manager = manager;
         strip = new TabStrip(this);
+        spare = new TabStrip(this);
         measureTimer.Tick += (_, _) =>
         {
             measureTimer.Stop();
@@ -141,6 +143,7 @@ internal sealed class TabGroup : IDisposable
         measureTimer.Dispose();
         RestoreAll();
         strip.Dispose();
+        spare.Dispose();
     }
 
     public void OnForeground(IntPtr hwnd)
@@ -216,7 +219,7 @@ internal sealed class TabGroup : IDisposable
             settlingUntil = Environment.TickCount64 + SettleMilliseconds;
         }
         active = hwnd;
-        strip.Attach(hwnd);
+        var swapped = SwapStrips(previous, hwnd);
         Unstash(hwnd);
 
         if (maximized)
@@ -252,8 +255,25 @@ internal sealed class TabGroup : IDisposable
         if (stashed.Contains(Native.GetForegroundWindow()))
             Native.SetForegroundWindow(hwnd);
 
+        if (swapped)
+            spare.HideStrip();
         PlaceStrip();
         strip.Invalidate();
+    }
+
+    bool SwapStrips(IntPtr previous, IntPtr hwnd)
+    {
+        if (spare.IsDisposed)
+            spare = new TabStrip(this);
+        if (previous == IntPtr.Zero || previous == hwnd || strip.AttachedTo != previous || !Native.IsWindowVisible(strip.Handle))
+        {
+            strip.Attach(hwnd);
+            strip.Refresh();
+            return false;
+        }
+        spare.Mirror(strip, hwnd);
+        (strip, spare) = (spare, strip);
+        return true;
     }
 
     void Stash(IntPtr hwnd)
@@ -289,6 +309,8 @@ internal sealed class TabGroup : IDisposable
         Win.Forget(hwnd);
         if (strip.IsDisposed)
             strip = new TabStrip(this);
+        if (spare.IsDisposed)
+            spare = new TabStrip(this);
         Drop(hwnd, closed: true);
     }
 
@@ -380,12 +402,11 @@ internal sealed class TabGroup : IDisposable
 
         var scale = Win.Scale(active);
         var bar = Bar(zoomed, scale);
-        var left = window.Left + bar.LeftInset;
-        var available = window.Right - bar.RightInset - left;
-        var bounds = new Rectangle(left, window.Top + bar.Top, Math.Min(available, strip.ContentWidth()), bar.Height);
+        var available = window.Width - bar.RightInset;
+        var bounds = new Rectangle(window.Left, window.Top + bar.Top, Math.Max(0, available), bar.Height);
 
         strip.Attach(active);
-        strip.Place(bounds, scale);
+        strip.Place(bounds, scale, bar.LeftInset);
         ScheduleMeasure();
     }
 
@@ -410,7 +431,7 @@ internal sealed class TabGroup : IDisposable
             return;
         var zoomed = Native.IsZoomed(active);
         var window = zoomed ? Win.WorkArea(active) : Win.VisibleBounds(active);
-        if (TitleBarProbe.Measure(active, window, Win.Scale(active), strip.ScreenBounds) is not { } bar)
+        if (TitleBarProbe.Measure(active, window, Win.Scale(active), strip.TabAreaScreenBounds) is not { } bar)
         {
             if (++failedMeasurements < MeasureAttempts)
                 measureTimer.Start();
