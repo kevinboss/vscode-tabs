@@ -38,28 +38,28 @@ internal static class TitleBarProbe
             .GroupBy(pixel => pixel).MaxBy(group => group.Count())!.Key;
         bool IsBackground(int pixel) => Distance(pixel, background) <= Tolerance;
 
-        var bottoms = new List<int>();
-        var tops = new List<int>();
         var candidates = columns.Where(x => IsBackground(At(x, probeRow))).ToList();
-        for (var i = 1; i <= 9 && candidates.Count > 0; i++)
+        if (candidates.Count == 0)
+            return null;
+
+        var top = Mode(candidates.Select(x =>
         {
-            var x = candidates[candidates.Count * i / 10];
+            var y = probeRow;
+            while (y > 0 && IsBackground(At(x, y - 1)))
+                y--;
+            return y;
+        }).ToList());
+
+        var heights = candidates.Select(x =>
+        {
             var y = probeRow;
             while (y + 1 < height && IsBackground(At(x, y + 1)))
                 y++;
-            bottoms.Add(y + 1);
-            y = probeRow;
-            while (y > 0 && IsBackground(At(x, y - 1)))
-                y--;
-            tops.Add(y);
-        }
-        if (bottoms.Count == 0)
+            return y + 1 - top;
+        }).Where(span => span >= S(16) && span <= S(60)).ToList();
+        if (heights.Count == 0)
             return null;
-
-        var top = Mode(tops);
-        var bottom = Mode(bottoms);
-        if (bottom - top < S(16) || bottom - top > S(60))
-            return null;
+        var bottom = top + Mode(heights);
 
         var occupied = new bool[width];
         foreach (var x in columns)
