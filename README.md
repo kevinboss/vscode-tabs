@@ -1,102 +1,75 @@
-# VS Code Tabs
+<p align="center">
+  <img src="extension/icon.png" width="120" alt="VS Code Tabs logo">
+</p>
 
-A Windows-only VS Code extension that groups VS Code windows into macOS-style tabs in the title bar.
+<h1 align="center">VS Code Tabs</h1>
 
-Install from the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kevinboss.vscode-tabs). User documentation is in [extension/README.md](extension/README.md).
+<p align="center">
+  Group VS Code windows into tabs in the title bar on Windows.
+</p>
 
-## How it works
+<p align="center">
+  <img src="https://img.shields.io/badge/.NET-512BD4?logo=dotnet&logoColor=white" alt=".NET">
+  <a href="https://marketplace.visualstudio.com/items?itemName=kevinboss.vscode-tabs"><img src="https://vsmarketplacebadges.dev/version-short/kevinboss.vscode-tabs.svg" alt="VS Marketplace"></a>
+  <a href="https://github.com/kevinboss/vscode-tabs/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/kevinboss/vscode-tabs/release.yml?label=Release" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/kevinboss/vscode-tabs" alt="License"></a>
+</p>
 
-The project has two parts: a VS Code extension (`extension/extension.js`) and a .NET WinForms helper (`src/VsCodeTabs`, compiled to `vscode-tabs.exe`).
+> This project is being developed using AI development tools. However, every line of code is reviewed and approved by a human before being committed.
 
-### Extension
+On Windows, every open VS Code window is its own taskbar entry and Alt+Tab stop; there are no window tabs.
+VS Code Tabs groups open `Code.exe` windows behind a single tabbed title bar, keeping one window visible per group while the rest sit off-screen and off the taskbar.
+A small VS Code extension configures the title bar, registers `Ctrl+Tab` and `Ctrl+Shift+Tab`, and launches a native .NET WinForms helper (`vscode-tabs.exe`) that tracks the windows and draws the tab strip.
+Tabs can be reordered, dragged out into windows of their own, or dropped onto another group's tab bar.
 
-On Windows (`process.platform === 'win32'`), the extension activates on `onStartupFinished`:
+The extension targets Windows x64 only.
+User documentation lives in [extension/README.md](extension/README.md).
 
-- Checks four VS Code settings (`window.menuBarVisibility`, `window.commandCenter`, `window.title`, `terminal.integrated.commandsToSkipShell`) and offers to apply them globally.
-- Registers `vscodeTabs.nextTab` (`Ctrl+Tab`) and `vscodeTabs.previousTab` (`Ctrl+Shift+Tab`).
-- Spawns `vscode-tabs.exe` as a detached, hidden background process using `vscodeTabs.executable` if set, or `extension/bin/vscode-tabs.exe` otherwise.
+## Installing
 
-### Inter-process communication
+1. **Install the extension.** Get **VS Code Tabs** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kevinboss.vscode-tabs), or download `vscode-tabs-<version>.vsix` from [Releases](https://github.com/kevinboss/vscode-tabs/releases) and run "Extensions: Install from VSIX…" in VS Code (or `code --install-extension <file>.vsix`). The package bundles `vscode-tabs.exe` as a self-contained binary, so no separate .NET runtime is needed.
+2. **Apply the title bar settings.** On first start the extension checks four settings (`window.menuBarVisibility`, `window.commandCenter`, `window.title`, `terminal.integrated.commandsToSkipShell`) and offers to update them in your user settings so the title bar has room for tabs and `Ctrl+Tab` works from the integrated terminal.
 
-The extension and the helper talk over a per-user Windows named pipe: `\\.\pipe\vscode-tabs-<username>`. Each connection sends a single newline-terminated command to the helper's `CommandPipe` server:
+## Repository layout
 
-- `next` and `previous`: sent by `vscodeTabs.nextTab` and `vscodeTabs.previousTab` to cycle tabs in the focused group. If connecting to the pipe fails, the extension falls back to VS Code's built-in editor switcher commands.
-- `closing <folder>`: sent from `deactivate()` with the window's first workspace folder path so the helper suppresses DWM close animations while another tab takes over.
-- `handover`: sent by a newer version of `vscode-tabs.exe` on startup to take over from an older running instance without restoring stashed windows to the desktop.
+- **`extension/`** — the VS Code extension (`extension.js`, `package.json`, `README.md`, `CHANGELOG.md`, `icon.png`, `LICENSE`, `.vscodeignore`). On Windows it activates on `onStartupFinished`, prompts for the four required settings, binds `Ctrl+Tab` and `Ctrl+Shift+Tab` to `vscodeTabs.nextTab` and `vscodeTabs.previousTab`, spawns `bin/vscode-tabs.exe` (or `vscodeTabs.executable` when set), and talks to the helper over the per-user named pipe.
+- **`src/VsCodeTabs/`** — the .NET 10 WinForms helper (`VsCodeTabs.csproj`, `app.manifest`, `app.ico`, and the C# sources). Tracks `Code.exe` windows with `SetWinEventHook` (`TabManager.cs`, `Win.cs`), manages tab groups, stashing, and DWM transitions (`TabGroup.cs`, `Taskbar.cs`, `Transitions.cs`), draws the title bar overlay and drag ghost (`TabStrip.cs`, `TabGhost.cs`, `TitleBarProbe.cs`, `TitleParser.cs`, `Palette.cs`), and runs the single-instance mutex, tray icon, and named pipe (`Program.cs`, `CommandPipe.cs`, `Native.cs`).
+- **`.github/workflows/release.yml`** — tag-triggered Release workflow that checks the tag against `extension/package.json` and `extension/CHANGELOG.md`, cross-builds the Windows helper on Linux, packages the `win32-x64` `.vsix`, attaches it to a GitHub Release, and publishes to the Marketplace.
 
-### Helper (`vscode-tabs.exe`)
+## Design decisions
 
-The helper is a single-instance .NET 10 WinForms application guarded by the `Local\vscode-tabs` mutex.
+- **A separate native helper instead of doing it inside the extension host.** VS Code's extension API does not expose Win32 window handles, title bar rendering, or taskbar state, and each window runs its own extension host. A single WinForms process (`vscode-tabs.exe`, guarded by the `Local\vscode-tabs` mutex) watches all top-level `Chrome_WidgetWin_1` windows owned by `Code.exe` through `SetWinEventHook`, attaches a borderless layered child `TabStrip` to the active window with `SetParent`, and exits after 10 seconds with no tracked windows.
+- **Parking inactive windows off-screen and off the taskbar.** Each `TabGroup` keeps only its active window at the group's bounds. Inactive tabs receive `WS_EX_TOOLWINDOW`, are removed from the taskbar through `ITaskbarList.DeleteTab`, and are parked 1000 pixels below the virtual screen at `HWND_BOTTOM`. DWM window transitions (`DWMWA_TRANSITIONS_FORCEDISABLED`) are disabled briefly during switches, opens, and closes so windows swap in place instead of animating from off-screen.
+- **A named pipe per user.** The extension and helper communicate over `\\.\pipe\vscode-tabs-<username>` (`PipeOptions.CurrentUserOnly`), sending one newline-terminated command per connection: `next`, `previous`, `closing <folder>`, or `handover`. Keeping commands connectionless lets any VS Code window reach the helper without maintaining sockets; if connecting fails, `Ctrl+Tab` and `Ctrl+Shift+Tab` fall back to VS Code's built-in recent editor switcher.
+- **Handing over to a newer exe on update.** When the extension updates while an older `vscode-tabs.exe` is still running, the new process compares file versions (injected from `extension/package.json` at build time). If its own version is newer, it sends `handover` over the pipe and waits up to 5 seconds for the mutex. The older helper exits via `Release()` instead of `Dispose()`, leaving stashed windows parked so the new instance adopts them on startup instead of scattering every grouped window across the desktop.
+- **Sampling the title bar colour instead of reading theme files.** `TitleBarProbe` captures the active window with `PrintWindow`, finds the modal title bar background pixel, and measures the height and left/right insets occupied by VS Code's own controls. `Palette` derives dark or light tab shades from that colour, and `TabGroup.FollowFocus` polls a pixel beside the strip after focus changes so the bar switches between focused and unfocused colours once VS Code repaints.
 
-- Window tracking: subscribes to Win32 window events with `SetWinEventHook` and matches top-level `Chrome_WidgetWin_1` windows owned by `Code.exe`.
-- Tab strip overlay: attaches a borderless layered child `Form` (`TabStrip`) to the active VS Code window with `SetParent`. `TitleBarProbe` captures the window via `PrintWindow` to measure title bar height, left and right insets, and background color. `Palette` derives tab colors from that background.
-- Stashing inactive tabs: only one window per `TabGroup` stays visible at the group's bounds. Inactive windows in the group receive `WS_EX_TOOLWINDOW`, are removed from the taskbar via `ITaskbarList.DeleteTab`, and are parked below the virtual screen.
-- Dragging and detaching: dragging within the tab bar reorders tabs. Dragging outside shows a translucent `TabGhost` window. Dropping on another group's tab bar transfers the tab, and dropping elsewhere detaches it into a new `TabGroup`.
-- State and lifecycle: tab order (up to 100 entries) is saved in `%LOCALAPPDATA%\vscode-tabs\order.txt`, and unhandled exceptions are logged to `%LOCALAPPDATA%\vscode-tabs\error.log`. A tray icon provides an Exit action that restores all stashed windows. The process exits after 10 seconds with no tracked windows.
+## Developing
 
-## Building from source
+Prerequisites: .NET 10 SDK (`net10.0-windows`; `VsCodeTabs.csproj` sets `EnableWindowsTargeting`, so the Windows binary can also cross-build on Linux) and Node.js with npm.
 
-Prerequisites:
-
-- .NET 10 SDK (`net10.0-windows`)
-- Node.js and npm
-
-Install packaging dependencies in `extension/`:
+Install packaging dependencies and build `extension/bin/vscode-tabs.exe`:
 
 ```sh
 cd extension
 npm install
-```
-
-Build the helper binary using the `vscode:prepublish` script:
-
-```sh
 npm run vscode:prepublish
 ```
 
-This runs `dotnet publish ../src/VsCodeTabs` for `win-x64` as a self-contained, compressed single-file executable and outputs `extension/bin/vscode-tabs.exe`. The assembly version is read from `extension/package.json`.
+`vscode:prepublish` runs `dotnet publish ../src/VsCodeTabs` for `win-x64` as a self-contained, compressed single-file executable and reads the assembly version from `extension/package.json`.
 
-Package the `win32-x64` VSIX:
+Package the `win32-x64` `.vsix` (which runs `vscode:prepublish` first):
 
 ```sh
 npm run package
 ```
 
-`vsce package --target win32-x64 --no-dependencies` runs `vscode:prepublish` automatically before producing the `.vsix` file.
+To test a custom build of the helper without repackaging, point the `vscodeTabs.executable` setting at your compiled `vscode-tabs.exe`. Tab order (up to 100 entries) is saved in `%LOCALAPPDATA%\vscode-tabs\order.txt`, and unhandled exceptions are logged to `%LOCALAPPDATA%\vscode-tabs\error.log` before the helper restores all stashed windows and exits.
 
-For local testing against a custom build of the helper, point the `vscodeTabs.executable` setting at your compiled `vscode-tabs.exe`.
+## Status
 
-## Repository layout
-
-```text
-extension/
-  extension.js        Extension entry point, settings prompt, pipe client, helper launcher
-  package.json        Extension manifest, commands, keybindings, packaging scripts
-  README.md           Marketplace documentation
-  icon.png            Extension icon
-  LICENSE             GPL-3.0 license text
-  .vscodeignore       Files excluded from the VSIX package
-src/VsCodeTabs/
-  VsCodeTabs.csproj   .NET 10 WinForms project (reads version from extension/package.json)
-  Program.cs          Entry point, single-instance mutex, version handover, tray icon
-  CommandPipe.cs      Per-user named pipe server and handover client
-  TabManager.cs       WinEvent hooks, tab groups, drag-and-drop, saved tab order, idle exit
-  TabGroup.cs         Window stashing, activation, strip placement, focus tracking
-  TabStrip.cs         Title bar overlay rendering, mouse handling, click-through
-  TabGhost.cs         Translucent floating preview shown while dragging a tab out
-  TitleBarProbe.cs    PrintWindow capture to detect title bar geometry and theme color
-  TitleParser.cs      Extracts folder name, parent folder, and identity from window titles
-  Palette.cs          Derives dark or light tab colors from the sampled title bar color
-  Transitions.cs      Temporarily disables DWM window animations during tab switches
-  Taskbar.cs          ITaskbarList COM wrapper for hiding and restoring taskbar buttons
-  Win.cs              Window identification, bounds, DPI, and process path helpers
-  Native.cs           Win32 and DWM P/Invoke declarations
-  app.manifest        Windows compatibility manifest
-  app.ico             Tray and executable icon
-LICENSE               GPL-3.0 license text
-README.md             This file
-```
+Releases are published by pushing a `vX.Y.Z` tag. The Release workflow (`.github/workflows/release.yml`) checks that the tag matches `extension/package.json` and has a matching `## [X.Y.Z]` entry in `extension/CHANGELOG.md`, cross-builds `vscode-tabs.exe` on `ubuntu-latest`, packages the `win32-x64` `.vsix`, attaches it to a GitHub Release, and publishes it to the VS Code Marketplace with `vsce publish --oidc` via Marketplace Trusted Publishing.
 
 ## License
 
-Licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`). See [LICENSE](LICENSE).
+GPL-3.0-or-later. See [LICENSE](LICENSE).
