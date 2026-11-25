@@ -14,6 +14,8 @@ internal sealed class TabManager : IDisposable
     readonly List<TabGroup> groups = [];
     readonly List<IntPtr> hooks = [];
     readonly Queue<(uint Event, IntPtr Hwnd)> pending = new();
+    readonly Dictionary<(IntPtr Hwnd, bool Focused), Color> backgrounds = [];
+    readonly Dictionary<bool, Color> lastBackgrounds = [];
     readonly Native.WinEventProc proc;
     readonly System.Windows.Forms.Timer pruneTimer = new() { Interval = 1000 };
     readonly System.Windows.Forms.Timer dragTimer = new() { Interval = 10 };
@@ -43,6 +45,17 @@ internal sealed class TabManager : IDisposable
     }
 
     public Dictionary<bool, TitleBar> TitleBars { get; } = [];
+
+    public void RememberBackground(IntPtr hwnd, bool focused, Color background)
+    {
+        backgrounds[(hwnd, focused)] = background;
+        lastBackgrounds[focused] = background;
+    }
+
+    public Color? Background(IntPtr hwnd, bool focused) =>
+        backgrounds.TryGetValue((hwnd, focused), out var background) ? background
+        : lastBackgrounds.TryGetValue(focused, out background) ? background
+        : null;
 
     public Transitions Transitions { get; } = new();
 
@@ -271,6 +284,8 @@ internal sealed class TabManager : IDisposable
                     foreach (var each in groups)
                         each.ScheduleMeasure();
                 }
+                foreach (var each in groups)
+                    each.ShowFocus();
                 break;
 
             case Native.EVENT_OBJECT_SHOW:
@@ -313,6 +328,8 @@ internal sealed class TabManager : IDisposable
                 group.Remove(hwnd);
             DropIfEmpty(group);
         }
+        foreach (var key in backgrounds.Keys.Where(key => !Native.IsWindow(key.Hwnd)).ToList())
+            backgrounds.Remove(key);
 
         idleSeconds = groups.Sum(group => group.Tabs.Count) == 0 ? idleSeconds + 1 : 0;
         if (idleSeconds >= IdleSecondsBeforeExit)

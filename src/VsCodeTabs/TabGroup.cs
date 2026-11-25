@@ -266,8 +266,15 @@ internal sealed class TabGroup : IDisposable
 
         if (swapped)
             spare.HideStrip();
+        ShowFocus();
         PlaceStrip();
         strip.Invalidate();
+    }
+
+    public void ShowFocus()
+    {
+        if (active != IntPtr.Zero && manager.Background(active, Native.GetForegroundWindow() == active) is { } background)
+            strip.ApplyTheme(background);
     }
 
     bool SwapStrips(IntPtr previous, IntPtr hwnd)
@@ -446,10 +453,12 @@ internal sealed class TabGroup : IDisposable
                 measureTimer.Start();
             return;
         }
+        manager.RememberBackground(active, Native.GetForegroundWindow() == active, bar.Background);
         strip.ApplyTheme(bar.Background);
-        if (manager.TitleBars.TryGetValue(zoomed, out var known) && known == bar)
+        var geometry = bar with { Background = Color.Empty };
+        if (manager.TitleBars.TryGetValue(zoomed, out var known) && known == geometry)
             return;
-        manager.TitleBars[zoomed] = bar;
+        manager.TitleBars[zoomed] = geometry;
         PlaceStrip();
         measureTimer.Stop();
     }
