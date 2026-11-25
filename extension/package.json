@@ -2,7 +2,7 @@
   "name": "vscode-tabs",
   "displayName": "VS Code Tabs",
   "description": "Groups VS Code windows into tabs in the title bar.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "kevinboss",
   "license": "GPL-3.0-or-later",
   "repository": {
