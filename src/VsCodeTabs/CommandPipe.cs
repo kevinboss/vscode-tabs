@@ -35,6 +35,25 @@ internal static class CommandPipe
             case "closing":
                 manager.Closing(argument);
                 break;
+            case "handover":
+                manager.HandOver();
+                break;
+        }
+    }
+
+    public static bool Send(string command)
+    {
+        try
+        {
+            using var client = new NamedPipeClientStream(".", Name, PipeDirection.Out, PipeOptions.CurrentUserOnly);
+            client.Connect(1000);
+            using var writer = new StreamWriter(client);
+            writer.WriteLine(command);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or TimeoutException or UnauthorizedAccessException)
+        {
+            return false;
         }
     }
 }

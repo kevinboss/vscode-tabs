@@ -140,8 +140,13 @@ internal sealed class TabGroup : IDisposable
 
     public void Dispose()
     {
-        measureTimer.Dispose();
         RestoreAll();
+        Release();
+    }
+
+    public void Release()
+    {
+        measureTimer.Dispose();
         strip.Dispose();
         spare.Dispose();
     }

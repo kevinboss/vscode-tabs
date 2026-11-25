@@ -31,6 +31,7 @@ internal sealed class TabManager : IDisposable
     int idleSeconds;
     bool draining;
     bool drainPosted;
+    bool handingOver;
 
     public TabManager()
     {
@@ -91,9 +92,20 @@ internal sealed class TabManager : IDisposable
         pruneTimer.Dispose();
         dragTimer.Dispose();
         foreach (var group in groups)
-            group.Dispose();
+        {
+            if (handingOver)
+                group.Release();
+            else
+                group.Dispose();
+        }
         groups.Clear();
         Transitions.Dispose();
+    }
+
+    public void HandOver()
+    {
+        handingOver = true;
+        Application.Exit();
     }
 
     public void Closing(string folder)

@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.Diagnostics;
+
 namespace VsCodeTabs;
 
 internal static class Program
@@ -6,7 +9,7 @@ internal static class Program
     static void Main()
     {
         using var mutex = new Mutex(true, @"Local\vscode-tabs", out var created);
-        if (!created)
+        if (!created && !TakeOver(mutex))
             return;
 
         ApplicationConfiguration.Initialize();
@@ -31,6 +34,51 @@ internal static class Program
         _ = CommandPipe.Listen(manager);
         Application.Run();
         tray.Visible = false;
+    }
+
+    static bool TakeOver(Mutex mutex)
+    {
+        using var self = Process.GetCurrentProcess();
+        var own = VersionOf(self);
+        var running = Process.GetProcessesByName(self.ProcessName)
+            .Where(process => process.Id != self.Id && process.SessionId == self.SessionId)
+            .ToList();
+        try
+        {
+            if (own is null || running.Count == 0 || running.Any(process => !(VersionOf(process) < own)))
+                return false;
+            if (!CommandPipe.Send("handover"))
+                return false;
+            try
+            {
+                return mutex.WaitOne(TimeSpan.FromSeconds(5));
+            }
+            catch (AbandonedMutexException)
+            {
+                return true;
+            }
+        }
+        finally
+        {
+            foreach (var process in running)
+                process.Dispose();
+        }
+    }
+
+    static Version? VersionOf(Process process)
+    {
+        try
+        {
+            var path = process.MainModule?.FileName;
+            if (path is null)
+                return null;
+            var info = FileVersionInfo.GetVersionInfo(path);
+            return new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
+        }
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     static Icon LoadIcon()
