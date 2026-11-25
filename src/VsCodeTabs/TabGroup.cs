@@ -72,7 +72,9 @@ internal sealed class TabGroup : IDisposable
         var index = tabs.IndexOf(active);
         if (index < 0 || tabs.Count < 2)
             return;
-        Switch(tabs[(index + step + tabs.Count) % tabs.Count]);
+        var target = ((index + step) % tabs.Count + tabs.Count) % tabs.Count;
+        if (target != index)
+            Switch(tabs[target]);
     }
 
     public void Close(IntPtr hwnd)

@@ -8,19 +8,26 @@ internal static class CommandPipe
 
     public static async Task Listen(TabManager manager)
     {
+        var ui = SynchronizationContext.Current ?? throw new InvalidOperationException("Listen must start on the UI thread.");
         while (true)
         {
             var server = new NamedPipeServerStream(Name, PipeDirection.In, NamedPipeServerStream.MaxAllowedServerInstances,
                 PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            await server.WaitForConnectionAsync();
-            _ = Serve(server, manager);
+            await server.WaitForConnectionAsync().ConfigureAwait(false);
+            _ = Serve(server, manager, ui);
         }
     }
 
-    static async Task Serve(NamedPipeServerStream server, TabManager manager)
+    static async Task Serve(NamedPipeServerStream server, TabManager manager, SynchronizationContext ui)
     {
-        using var reader = new StreamReader(server);
-        var line = await reader.ReadLineAsync() ?? "";
+        string line;
+        using (var reader = new StreamReader(server))
+            line = await reader.ReadLineAsync().ConfigureAwait(false) ?? "";
+        ui.Post(_ => Run(line, manager), null);
+    }
+
+    static void Run(string line, TabManager manager)
+    {
         var space = line.IndexOf(' ');
         var command = space < 0 ? line : line[..space];
         var argument = space < 0 ? "" : line[(space + 1)..];

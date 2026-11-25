@@ -29,6 +29,8 @@ internal sealed class TabManager : IDisposable
     TabGroup? dropTarget;
     (uint Event, IntPtr Hwnd) lastQueued;
     int idleSeconds;
+    int pendingCycle;
+    bool cyclePosted;
     bool draining;
     bool drainPosted;
     bool handingOver;
@@ -73,7 +75,23 @@ internal sealed class TabManager : IDisposable
         focused = group;
     }
 
-    public void Cycle(int step) => (GroupOf(Native.GetForegroundWindow()) ?? focused)?.Cycle(step);
+    public void Cycle(int step)
+    {
+        pendingCycle += step;
+        if (cyclePosted || context is null)
+            return;
+        cyclePosted = true;
+        context.Post(_ => ApplyCycle(), null);
+    }
+
+    void ApplyCycle()
+    {
+        cyclePosted = false;
+        var step = pendingCycle;
+        pendingCycle = 0;
+        if (step != 0)
+            (GroupOf(Native.GetForegroundWindow()) ?? focused)?.Cycle(step);
+    }
 
     public void MarkFocused(TabGroup group) => focused = group;
 
