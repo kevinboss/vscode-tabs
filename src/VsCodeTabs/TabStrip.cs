@@ -369,7 +369,12 @@ internal sealed class TabStrip : Form
 
     void StayOnTop()
     {
-        if (owner != IntPtr.Zero && Native.GetWindow(Handle, Native.GW_HWNDPREV) != IntPtr.Zero)
+        if (owner == IntPtr.Zero || !Native.IsWindowVisible(Handle))
+            return;
+        var above = Native.GetWindow(Handle, Native.GW_HWNDPREV);
+        while (above != IntPtr.Zero && !Native.IsWindowVisible(above))
+            above = Native.GetWindow(above, Native.GW_HWNDPREV);
+        if (above != IntPtr.Zero)
             Native.SetWindowPos(Handle, Native.HWND_TOP, 0, 0, 0, 0, Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
 
