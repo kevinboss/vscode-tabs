@@ -4,14 +4,34 @@
   "description": "Groups VS Code windows into tabs in the title bar.",
   "version": "0.0.12",
   "publisher": "kevinboss",
-  "license": "UNLICENSED",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kevinboss/vscode-tabs.git",
+    "directory": "extension"
+  },
+  "homepage": "https://github.com/kevinboss/vscode-tabs#readme",
+  "bugs": {
+    "url": "https://github.com/kevinboss/vscode-tabs/issues"
+  },
+  "keywords": [
+    "tabs",
+    "windows",
+    "title bar",
+    "window management",
+    "workspaces"
+  ],
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
+  "categories": [
+    "Other"
+  ],
   "main": "./extension.js",
   "scripts": {
-    "vscode:prepublish": "dotnet publish ../src/VsCodeTabs -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o bin"
+    "vscode:prepublish": "dotnet publish ../src/VsCodeTabs -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o bin",
+    "package": "vsce package --target win32-x64 --no-dependencies"
   },
   "activationEvents": [
     "onStartupFinished"
@@ -54,5 +74,8 @@
         }
       }
     }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^4.1.1"
   }
 }

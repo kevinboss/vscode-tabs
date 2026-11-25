@@ -1,0 +1,64 @@
+name: Release
+
+# Push a vX.Y.Z tag to build the .vsix, attach it to a GitHub Release and
+# publish it to the VS Code Marketplace. The csproj sets EnableWindowsTargeting,
+# so the Windows helper cross-builds on Linux.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: marketplace-publish
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+
+      - name: Tag must match package.json and have a changelog entry
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          if ! grep -qE "^## \[${version//./\\.}\]" CHANGELOG.md; then
+            echo "::error::extension/CHANGELOG.md has no '## [$version]' section"
+            exit 1
+          fi
+
+      # vsce runs vscode:prepublish, which builds bin/vscode-tabs.exe.
+      - name: Build .vsix
+        run: npm run package
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" *.vsix --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes *.vsix
+          fi
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --packagePath *.vsix
