@@ -2,13 +2,16 @@ name: Release
 
 # Push a vX.Y.Z tag to build the .vsix, attach it to a GitHub Release and
 # publish it to the VS Code Marketplace. The csproj sets EnableWindowsTargeting,
-# so the Windows helper cross-builds on Linux.
+# so the Windows helper cross-builds on Linux. Publishing uses Marketplace
+# Trusted Publishing: a policy on the kevinboss publisher trusts this workflow
+# file, and vsce exchanges the job's GitHub OIDC token for a Marketplace one.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -59,6 +62,4 @@ jobs:
           fi
 
       - name: Publish to VS Code Marketplace
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --packagePath *.vsix
+        run: npx vsce publish --oidc --packagePath *.vsix
