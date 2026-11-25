@@ -30,6 +30,7 @@ internal static class Native
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_FRAMECHANGED = 0x0020;
 
     public const int GWL_STYLE = -16;
     public const int GWL_EXSTYLE = -20;
@@ -156,6 +157,9 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern bool ScreenToClient(IntPtr hwnd, ref Point point);
+
+    [DllImport("user32.dll")]
+    public static extern bool ClientToScreen(IntPtr hwnd, ref Point point);
 
     [DllImport("user32.dll")]
     public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, uint flags);

@@ -37,6 +37,19 @@ internal static class Win
         Native.SetWindowLongPtr(hwnd, Native.GWL_EXSTYLE, new IntPtr(exStyle));
     }
 
+    public static void RepairMaximizedFrame(IntPtr hwnd)
+    {
+        if (!Native.IsZoomed(hwnd))
+            return;
+        Native.GetWindowRect(hwnd, out var outer);
+        var client = Point.Empty;
+        Native.ClientToScreen(hwnd, ref client);
+        if (client.X != outer.Left || client.Y != outer.Top)
+            return;
+        Native.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_FRAMECHANGED);
+    }
+
     public static Rectangle OuterBounds(IntPtr hwnd)
     {
         Native.GetWindowRect(hwnd, out var rect);

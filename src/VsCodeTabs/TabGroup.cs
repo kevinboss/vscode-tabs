@@ -130,6 +130,7 @@ internal sealed class TabGroup : IDisposable
             {
                 var bounds = Win.MaximizedBounds(active != IntPtr.Zero ? active : hwnd);
                 Native.SetWindowPos(hwnd, active, bounds.X, bounds.Y, bounds.Width, bounds.Height, Native.SWP_NOACTIVATE);
+                Win.RepairMaximizedFrame(hwnd);
             }
             else if (!frame.IsEmpty)
                 Win.SetVisibleBounds(hwnd, frame, active, Native.SWP_NOACTIVATE);
@@ -241,6 +242,7 @@ internal sealed class TabGroup : IDisposable
                 Native.SetWindowPos(hwnd, Native.HWND_TOP, bounds.X, bounds.Y, bounds.Width, bounds.Height,
                     Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
             }
+            Win.RepairMaximizedFrame(hwnd);
         }
         else
         {
