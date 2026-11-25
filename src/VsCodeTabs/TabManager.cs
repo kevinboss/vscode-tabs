@@ -285,7 +285,7 @@ internal sealed class TabManager : IDisposable
                         each.ScheduleMeasure();
                 }
                 foreach (var each in groups)
-                    each.ShowFocus();
+                    each.FollowFocus();
                 break;
 
             case Native.EVENT_OBJECT_SHOW:

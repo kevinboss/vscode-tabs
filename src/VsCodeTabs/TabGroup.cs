@@ -12,6 +12,7 @@ internal sealed class TabGroup : IDisposable
     const int SettleMilliseconds = 2000;
     const int QuietMilliseconds = 300;
     const int CloseQuietMilliseconds = 10000;
+    const int FollowMilliseconds = 300;
 
     readonly TabManager manager;
     TabStrip strip;
@@ -26,6 +27,7 @@ internal sealed class TabGroup : IDisposable
     IntPtr settling;
     long settlingUntil;
     int failedMeasurements;
+    int focusWatch;
 
     public TabGroup(TabManager manager)
     {
@@ -273,9 +275,50 @@ internal sealed class TabGroup : IDisposable
 
     public void ShowFocus()
     {
+        Interlocked.Increment(ref focusWatch);
         if (active != IntPtr.Zero && manager.Background(active, Native.GetForegroundWindow() == active) is { } background)
             strip.ApplyTheme(background);
     }
+
+    public void FollowFocus()
+    {
+        var window = active;
+        var previous = strip.Colors.Background;
+        if (window == IntPtr.Zero || manager.Background(window, Native.GetForegroundWindow() == window) is not { } expected
+            || expected.ToArgb() == previous.ToArgb())
+            return;
+        var bounds = strip.ScreenBounds;
+        if (bounds.IsEmpty)
+        {
+            ShowFocus();
+            return;
+        }
+        var sample = new Point(bounds.Right + Dip(4, Win.Scale(window)), bounds.Top + bounds.Height / 2);
+        var watch = Interlocked.Increment(ref focusWatch);
+        var ui = SynchronizationContext.Current!;
+        Task.Run(() =>
+        {
+            var deadline = Environment.TickCount64 + FollowMilliseconds;
+            while (Environment.TickCount64 < deadline && Volatile.Read(ref focusWatch) == watch && !Repainted(window, sample, previous, expected))
+            {
+            }
+            ui.Post(_ =>
+            {
+                if (focusWatch == watch && active == window)
+                    strip.ApplyTheme(expected);
+            }, null);
+        });
+    }
+
+    static bool Repainted(IntPtr window, Point sample, Color previous, Color expected)
+    {
+        if (Native.GetAncestor(Native.WindowFromPoint(sample), Native.GA_ROOT) != window)
+            return true;
+        var pixel = Win.ScreenPixel(sample);
+        return Distance(pixel, expected) < Distance(pixel, previous);
+    }
+
+    static int Distance(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
 
     bool SwapStrips(IntPtr previous, IntPtr hwnd)
     {

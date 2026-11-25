@@ -43,6 +43,7 @@ internal static class Native
     public const int WS_EX_NOACTIVATE = 0x08000000;
     public const uint GW_OWNER = 4;
     public const uint GW_HWNDPREV = 3;
+    public const uint GA_ROOT = 2;
 
     public const uint WM_CLOSE = 0x0010;
     public const int WS_EX_LAYERED = 0x00080000;
@@ -172,6 +173,21 @@ internal static class Native
 
     [DllImport("user32.dll")]
     public static extern bool PrintWindow(IntPtr hwnd, IntPtr dc, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+
+    [DllImport("gdi32.dll")]
+    public static extern uint GetPixel(IntPtr dc, int x, int y);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
 
     [DllImport("user32.dll")]
     public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);

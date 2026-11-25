@@ -90,6 +90,20 @@ internal static class Win
         return dpi == 0 ? 1f : dpi / 96f;
     }
 
+    public static Color ScreenPixel(Point point)
+    {
+        var dc = Native.GetDC(IntPtr.Zero);
+        try
+        {
+            var pixel = Native.GetPixel(dc, point.X, point.Y);
+            return Color.FromArgb((int)(pixel & 0xFF), (int)((pixel >> 8) & 0xFF), (int)((pixel >> 16) & 0xFF));
+        }
+        finally
+        {
+            Native.ReleaseDC(IntPtr.Zero, dc);
+        }
+    }
+
     public static Rectangle WorkArea(IntPtr hwnd) => MonitorInfo(hwnd).rcWork.ToRectangle();
 
     public static Rectangle MonitorBounds(IntPtr hwnd) => MonitorInfo(hwnd).rcMonitor.ToRectangle();
