@@ -13,6 +13,7 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=kevinboss.vscode-tabs"><img src="https://vsmarketplacebadges.dev/version-short/kevinboss.vscode-tabs.svg" alt="VS Marketplace"></a>
   <a href="https://github.com/kevinboss/vscode-tabs/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/kevinboss/vscode-tabs/release.yml?label=Release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/kevinboss/vscode-tabs" alt="License"></a>
+  <a href="https://github.com/kevinboss/heartbeat"><img src="https://raw.githubusercontent.com/kevinboss/heartbeat/main/badges/kevinboss_vscode-tabs.svg" alt="Heartbeat"></a>
 </p>
 
 > This project is being developed using AI development tools. However, every line of code is reviewed and approved by a human before being committed.
