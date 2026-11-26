@@ -4,6 +4,14 @@ All notable changes to the VS Code Tabs extension are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-26
+
+### Added
+- Pre-release channel. Every change pushed to `main` now publishes a pre-release build to the Marketplace. Select "Switch to Pre-Release Version" on the extension's page in VS Code to opt in, and "Switch to Release Version" to go back to stable builds. Stable releases sit on even minor versions (starting with 0.2.0) and pre-releases use the odd minor above them.
+
+### Changed
+- Shortened the Marketplace page to what the extension does and how to use it, with the license at the bottom.
+
 ## [0.1.2] - 2026-11-26
 
 ### Changed
@@ -26,6 +34,7 @@ First Marketplace release.
 - On first start the extension offers to set the four VS Code settings the tab bar needs.
 - The helper is bundled as a self-contained exe. When the extension updates, the newer exe takes over from the running one without restoring the grouped windows.
 
+[0.2.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.2.0
 [0.1.2]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.1.2
 [0.1.1]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.1.1
 [0.1.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.1.0
