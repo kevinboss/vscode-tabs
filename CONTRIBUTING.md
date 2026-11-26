@@ -45,7 +45,7 @@ windows and exits.
   settings, binds `Ctrl+Tab` and `Ctrl+Shift+Tab` to `vscodeTabs.nextTab` and
   `vscodeTabs.previousTab`, spawns `bin/vscode-tabs.exe` (or
   `vscodeTabs.executable` when set), and talks to the helper over the per-user
-  named pipe.
+  named pipe. User documentation lives in `extension/README.md`.
 - `src/VsCodeTabs/` — the .NET 10 WinForms helper (`VsCodeTabs.csproj`,
   `app.manifest`, `app.ico`, and the C# sources). Tracks `Code.exe` windows with
   `SetWinEventHook` (`TabManager.cs`, `Win.cs`), manages tab groups, stashing,
@@ -54,7 +54,7 @@ windows and exits.
   `TitleBarProbe.cs`, `TitleParser.cs`, `Palette.cs`), and runs the
   single-instance mutex, tray icon, and named pipe (`Program.cs`,
   `CommandPipe.cs`, `Native.cs`).
-- `docs/` — user documentation (`usage.md`) and design notes (`design.md`).
+- `docs/` — design notes (`design.md`).
 - `.github/workflows/release.yml` — tag-triggered Release workflow that checks
   the tag against `extension/package.json` and `extension/CHANGELOG.md`,
   cross-builds the Windows helper on Linux, packages the `win32-x64` `.vsix`,
