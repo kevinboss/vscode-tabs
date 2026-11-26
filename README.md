@@ -37,8 +37,8 @@ title bar has room for tabs and `Ctrl+Tab` works from the integrated terminal.
 Choose "Apply", then open a second VS Code window to see both appear as tabs in
 the title bar. Click a tab or press `Ctrl+Tab` and `Ctrl+Shift+Tab` to switch
 windows, and click `+` to open a new window in the current group. See
-[extension/README.md](extension/README.md) for managing tabs, stopping the
-helper, settings, and limitations.
+[docs/usage.md](docs/usage.md) for managing tabs, stopping the helper, settings,
+and limitations.
 
 ## How to contribute
 
