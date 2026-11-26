@@ -13,6 +13,11 @@ or download a `vscode-tabs-<version>.vsix` file from
 "Extensions: Install from VSIX…" in VS Code (or
 `code --install-extension <file>.vsix`).
 
+Pre-release builds are published to the Marketplace on every change to `main`.
+To opt in, open the extension's Marketplace page in VS Code and select "Switch
+to Pre-Release Version". To return to stable releases, select "Switch to Release
+Version" on the same page.
+
 ## Getting started
 
 1. Apply the title bar settings. On startup the extension checks four VS Code

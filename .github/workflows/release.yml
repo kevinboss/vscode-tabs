@@ -1,12 +1,14 @@
 name: Release
 
 # Push a vX.Y.Z tag to build the .vsix, attach it to a GitHub Release and
-# publish it to the VS Code Marketplace. The csproj sets EnableWindowsTargeting,
-# so the Windows helper cross-builds on Linux. Publishing uses Marketplace
-# Trusted Publishing: a policy on the kevinboss publisher trusts this workflow
-# file, and vsce exchanges the job's GitHub OIDC token for a Marketplace one.
+# publish it to the VS Code Marketplace. Every other push to main publishes a
+# pre-release. The csproj sets EnableWindowsTargeting, so the Windows helper
+# cross-builds on Linux. Publishing uses Marketplace Trusted Publishing: a
+# policy on the kevinboss publisher trusts this workflow file, so both lanes
+# live here, and vsce exchanges the job's GitHub OIDC token for a Marketplace one.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
@@ -15,6 +17,7 @@ permissions:
 
 jobs:
   release:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     concurrency:
       group: marketplace-publish
@@ -25,6 +28,9 @@ jobs:
         working-directory: extension
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
@@ -35,13 +41,12 @@ jobs:
           cache-dependency-path: extension/package-lock.json
       - run: npm ci
 
-      - name: Tag must match package.json and have a changelog entry
+      - name: Version must match the tag, sit on an even minor, and be unpublished
+        run: node ../scripts/publish-version.mjs stable "$GITHUB_REF_NAME"
+
+      - name: Changelog must have an entry for this version
         run: |
           version=$(node -p "require('./package.json').version")
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $version"
-            exit 1
-          fi
           if ! grep -qE "^## \[${version//./\\.}\]" CHANGELOG.md; then
             echo "::error::extension/CHANGELOG.md has no '## [$version]' section"
             exit 1
@@ -63,3 +68,68 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         run: npx vsce publish --oidc --packagePath *.vsix
+
+  pre-release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: marketplace-publish
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # A commit that moves the version prepares a stable release whose tag may
+      # arrive in a separate push, so it must not also ship as a pre-release.
+      - name: Skip commits that belong to the stable lane
+        id: lane
+        run: |
+          read_version() { node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version"; }
+          prev=$(git show HEAD~1:extension/package.json 2>/dev/null | read_version 2>/dev/null || true)
+          curr=$(node -p "require('./package.json').version")
+          if [ -n "$prev" ] && [ "$prev" != "$curr" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::No pre-release published: the version moved $prev -> $curr, so this is a release commit"
+          elif tag=$(git describe --exact-match --tags HEAD 2>/dev/null); then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::No pre-release published: HEAD is tagged $tag"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-dotnet@v5
+        if: steps.lane.outputs.skip != 'true'
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-node@v5
+        if: steps.lane.outputs.skip != 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - if: steps.lane.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Decide the version
+        if: steps.lane.outputs.skip != 'true'
+        id: version
+        run: |
+          version=$(node ../scripts/publish-version.mjs prerelease)
+          test -n "$version"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build pre-release .vsix
+        if: steps.lane.outputs.skip != 'true'
+        run: |
+          npm version "${{ steps.version.outputs.value }}" --no-git-tag-version --allow-same-version
+          npx vsce package --pre-release --target win32-x64 --no-dependencies
+
+      - name: Publish pre-release to VS Code Marketplace
+        if: steps.lane.outputs.skip != 'true'
+        run: npx vsce publish --oidc --pre-release --packagePath *.vsix
