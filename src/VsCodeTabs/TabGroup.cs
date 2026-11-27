@@ -13,6 +13,7 @@ internal sealed class TabGroup : IDisposable
     const int QuietMilliseconds = 300;
     const int CloseQuietMilliseconds = 10000;
     const int ClosingTimeoutMilliseconds = 15000;
+    const int CoverTimeoutMilliseconds = 3000;
     const int FollowMilliseconds = 300;
 
     readonly TabManager manager;
@@ -23,7 +24,14 @@ internal sealed class TabGroup : IDisposable
     readonly Dictionary<IntPtr, int> closing = [];
     readonly Dictionary<IntPtr, string> identities = [];
     readonly System.Windows.Forms.Timer measureTimer = new() { Interval = 300 };
+    readonly System.Windows.Forms.Timer coverTimer = new() { Interval = 100 };
 
+    Cover? cover;
+    bool pendingTab;
+    IntPtr loadingTab;
+    long loadingSince;
+    IntPtr coveredFrom;
+    long coverUntil;
     IntPtr active;
     Rectangle frame;
     IntPtr settling;
@@ -42,6 +50,7 @@ internal sealed class TabGroup : IDisposable
             measureTimer.Stop();
             MeasureTitleBar();
         };
+        coverTimer.Tick += (_, _) => CheckCover();
     }
 
     public IReadOnlyList<IntPtr> Tabs => tabs;
@@ -137,6 +146,7 @@ internal sealed class TabGroup : IDisposable
     public void NewTab()
     {
         manager.MarkFocused(this);
+        CoverActive();
         var executable = active != IntPtr.Zero ? Win.ProcessPath(active) : null;
         Native.AllowSetForegroundWindow(Native.ASFW_ANY);
         var start = new ProcessStartInfo(executable ?? "code", "--new-window")
@@ -148,6 +158,48 @@ internal sealed class TabGroup : IDisposable
             start.Environment.Remove(name);
         Process.Start(start);
     }
+
+    void CoverActive()
+    {
+        DropCover();
+        if (active == IntPtr.Zero || !Native.IsWindowVisible(active) || Native.IsIconic(active))
+            return;
+        pendingTab = true;
+        loadingSince = Environment.TickCount64;
+        strip.Refresh();
+        cover = Cover.Over(TitleBarArea(active), strip.ScreenBounds);
+        coveredFrom = active;
+        coverUntil = Environment.TickCount64 + CoverTimeoutMilliseconds;
+        coverTimer.Start();
+    }
+
+    void CheckCover()
+    {
+        if (cover is null || Environment.TickCount64 >= coverUntil)
+            DropCover();
+        else if (active != coveredFrom && Native.IsWindowVisible(active)
+            && TitleBarProbe.Measure(active, TitleBarArea(active), Win.Scale(active), strip.TabAreaScreenBounds) is not null)
+            DropCover();
+    }
+
+    void DropCover()
+    {
+        coverTimer.Stop();
+        cover?.Dispose();
+        cover = null;
+        pendingTab = false;
+        loadingTab = IntPtr.Zero;
+        if (!strip.IsDisposed)
+            strip.Invalidate();
+    }
+
+    public bool PendingTab => pendingTab;
+
+    public IntPtr LoadingTab => loadingTab;
+
+    public long LoadingSince => loadingSince;
+
+    static Rectangle TitleBarArea(IntPtr hwnd) => Native.IsZoomed(hwnd) ? Win.WorkArea(hwnd) : Win.VisibleBounds(hwnd);
 
     static bool IsVsCodeInternal(string name) =>
         name.Equals("ELECTRON_RUN_AS_NODE", StringComparison.OrdinalIgnoreCase)
@@ -180,6 +232,8 @@ internal sealed class TabGroup : IDisposable
     public void Release()
     {
         closing.Clear();
+        DropCover();
+        coverTimer.Dispose();
         measureTimer.Dispose();
         strip.Dispose();
         spare.Dispose();
@@ -281,6 +335,11 @@ internal sealed class TabGroup : IDisposable
             SaveOrder();
             settling = hwnd;
             settlingUntil = Environment.TickCount64 + SettleMilliseconds;
+            if (pendingTab)
+            {
+                pendingTab = false;
+                loadingTab = hwnd;
+            }
         }
         active = hwnd;
         var swapped = SwapStrips(previous, hwnd);

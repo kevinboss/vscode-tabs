@@ -51,6 +51,8 @@ internal sealed class TabStrip : Form
             Recover();
             StayOnTop();
             UpdatePassThrough();
+            if (group.PendingTab || group.LoadingTab != IntPtr.Zero)
+                Invalidate();
         };
         pollTimer.Start();
     }
@@ -218,30 +220,35 @@ internal sealed class TabStrip : Form
         for (var i = 0; i < layout.Count; i++)
         {
             var (hwnd, tab, close, label) = layout[i];
-            var isActive = hwnd == group.Active;
-            var isHovered = i == hoverIndex;
+            var isPlaceholder = hwnd == IntPtr.Zero;
+            var isActive = group.PendingTab ? isPlaceholder : hwnd == group.Active;
+            var isHovered = i == hoverIndex && !isPlaceholder;
+            var opacity = isPlaceholder || hwnd == group.LoadingTab
+                ? PulseOpacity(Environment.TickCount64 - group.LoadingSince)
+                : 1.0;
+            Color Fade(Color color) => opacity >= 1.0 ? color : Blend(color, palette.Background, opacity);
 
             if (isActive || isHovered)
-                FillRounded(graphics, isActive ? palette.ActiveBackground : palette.HoverBackground, tab);
+                FillRounded(graphics, Fade(isActive ? palette.ActiveBackground : palette.HoverBackground), tab);
 
             var textRight = isActive || isHovered ? close.Left - S(4) : tab.Right - S(10);
             var nameBounds = Rectangle.FromLTRB(tab.Left + S(10), tab.Top, textRight, tab.Bottom);
             TextRenderer.DrawText(graphics, label.Name, nameFont, nameBounds,
-                isActive ? palette.ActiveText : palette.InactiveText, LabelFormat);
+                Fade(isActive ? palette.ActiveText : palette.InactiveText), LabelFormat);
 
             if (label.Detail.Length > 0)
             {
                 var nameWidth = TextRenderer.MeasureText(graphics, label.Name, nameFont, Size.Empty, MeasureFormat).Width;
                 var detailBounds = Rectangle.FromLTRB(nameBounds.Left + nameWidth + S(6), tab.Top, textRight, tab.Bottom);
                 if (detailBounds.Width > S(12))
-                    TextRenderer.DrawText(graphics, label.Detail, detailFont, detailBounds, palette.DetailText, LabelFormat);
+                    TextRenderer.DrawText(graphics, label.Detail, detailFont, detailBounds, Fade(palette.DetailText), LabelFormat);
             }
 
-            if (isActive || isHovered)
+            if ((isActive || isHovered) && !isPlaceholder)
             {
                 if (isHovered && hoverClose)
                     FillRounded(graphics, palette.ButtonHover, close);
-                DrawGlyph(graphics, close, isActive ? palette.ActiveText : palette.InactiveText, cross: true);
+                DrawGlyph(graphics, close, Fade(isActive ? palette.ActiveText : palette.InactiveText), cross: true);
             }
         }
 
@@ -283,7 +290,7 @@ internal sealed class TabStrip : Form
         if (e.Button != MouseButtons.Left)
             return;
         var index = IndexAt(e.Location);
-        if (index < 0 || layout[index].Close.Contains(e.Location))
+        if (index < 0 || layout[index].Hwnd == IntPtr.Zero || layout[index].Close.Contains(e.Location))
             return;
 
         dragIndex = index;
@@ -330,6 +337,8 @@ internal sealed class TabStrip : Form
     {
         Arrange();
         var index = IndexAt(e.Location);
+        if (index >= 0 && layout[index].Hwnd == IntPtr.Zero)
+            index = -1;
         if (e.Button == MouseButtons.Left && !dragging)
         {
             if (index >= 0 && layout[index].Close.Contains(e.Location))
@@ -404,13 +413,13 @@ internal sealed class TabStrip : Form
     void Arrange()
     {
         layout.Clear();
-        var tabs = group.Tabs;
+        var tabs = group.PendingTab ? group.Tabs.Append(IntPtr.Zero).ToList() : group.Tabs;
         var height = S(22);
         var top = (ClientSize.Height - height) / 2;
         var gap = S(2);
         var closeSize = S(18);
         var plusSize = S(22);
-        var labels = tabs.Select(hwnd => TitleParser.Label(Win.Title(hwnd))).ToList();
+        var labels = tabs.Select(hwnd => TitleParser.Label(hwnd == IntPtr.Zero ? "Visual Studio Code" : Win.Title(hwnd))).ToList();
         var widths = labels.Select(TabWidth).ToList();
 
         var available = Math.Max(0, ClientSize.Width - iconArea - plusSize - S(12) - gap * tabs.Count);
@@ -480,6 +489,35 @@ internal sealed class TabStrip : Form
         graphics.FillPath(brush, path);
         graphics.SmoothingMode = SmoothingMode.Default;
     }
+
+    static double PulseOpacity(long elapsed)
+    {
+        var phase = elapsed % 2000 / 1000.0;
+        var eased = EaseInOut(phase < 1 ? phase : phase - 1);
+        return phase < 1 ? 0.5 + 0.5 * eased : 1 - 0.5 * eased;
+    }
+
+    static double EaseInOut(double x)
+    {
+        double low = 0, high = 1;
+        for (var i = 0; i < 20; i++)
+        {
+            var t = (low + high) / 2;
+            if (Bezier(t, 0.4, 0.6) < x)
+                low = t;
+            else
+                high = t;
+        }
+        return Bezier((low + high) / 2, 0, 1);
+    }
+
+    static double Bezier(double t, double first, double second) =>
+        3 * (1 - t) * (1 - t) * t * first + 3 * (1 - t) * t * t * second + t * t * t;
+
+    static Color Blend(Color color, Color toward, double amount) => Color.FromArgb(
+        (int)Math.Round(toward.R + (color.R - toward.R) * amount),
+        (int)Math.Round(toward.G + (color.G - toward.G) * amount),
+        (int)Math.Round(toward.B + (color.B - toward.B) * amount));
 
     void DrawGlyph(Graphics graphics, Rectangle bounds, Color color, bool cross)
     {
