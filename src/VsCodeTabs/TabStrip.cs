@@ -107,7 +107,8 @@ internal sealed class TabStrip : Form
         if (parent == owner && Native.GetParent(handle) == parent)
             return;
         owner = parent;
-        var wasTopLevel = Native.GetParent(handle) == IntPtr.Zero;
+        var current = Native.GetParent(handle);
+        var wasTopLevel = current == IntPtr.Zero || current == Native.GetDesktopWindow();
         var style = Native.GetWindowLongPtr(handle, Native.GWL_STYLE).ToInt64();
         style = (style & ~Native.WS_POPUP) | Native.WS_CHILD | Native.WS_CLIPSIBLINGS;
         Native.SetWindowLongPtr(handle, Native.GWL_STYLE, new IntPtr(style));
@@ -174,8 +175,14 @@ internal sealed class TabStrip : Form
 
     void Recover()
     {
-        if (owner == IntPtr.Zero || !Native.IsWindow(owner))
+        if (owner == IntPtr.Zero)
             return;
+        if (!Native.IsWindow(owner))
+        {
+            if (IsHandleCreated)
+                HideStrip();
+            return;
+        }
         if (IsHandleCreated && Native.GetParent(Handle) == owner)
             return;
         Place(placed, scale, iconArea);

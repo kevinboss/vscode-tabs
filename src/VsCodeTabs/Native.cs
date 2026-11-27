@@ -116,6 +116,9 @@ internal static class Native
     public static extern bool IsWindow(IntPtr hwnd);
 
     [DllImport("user32.dll")]
+    public static extern IntPtr GetDesktopWindow();
+
+    [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hwnd);
 
     [DllImport("user32.dll")]
