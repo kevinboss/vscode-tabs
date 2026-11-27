@@ -33,6 +33,7 @@ function activate(context) {
       send('next', 'workbench.action.quickOpenPreviousRecentlyUsedEditorInGroup')),
     vscode.commands.registerCommand('vscodeTabs.previousTab', () =>
       send('previous', 'workbench.action.quickOpenLeastRecentlyUsedEditorInGroup')),
+    vscode.window.onDidChangeActiveColorTheme(() => send('theme')),
   );
   promptForSettings(context);
 
@@ -53,7 +54,7 @@ function send(command, fallback) {
     connected = true;
   });
   socket.on('error', () => {
-    if (!connected) {
+    if (!connected && fallback) {
       vscode.commands.executeCommand(fallback);
     }
   });

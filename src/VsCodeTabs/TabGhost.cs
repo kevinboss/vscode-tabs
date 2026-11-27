@@ -66,7 +66,7 @@ internal sealed class TabGhost : Form
         var graphics = e.Graphics;
         graphics.Clear(palette.Background);
         var bounds = new Rectangle(0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
-        var diameter = S(4) * 2;
+        var diameter = S(5) * 2;
         using (var path = new GraphicsPath())
         {
             path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
@@ -75,7 +75,7 @@ internal sealed class TabGhost : Form
             path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
             path.CloseFigure();
             using var fill = new SolidBrush(palette.ActiveBackground);
-            using var border = new Pen(palette.ButtonHover);
+            using var border = new Pen(palette.ActiveBorder.IsEmpty ? palette.ButtonHover : palette.ActiveBorder);
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
             graphics.FillPath(fill, path);
             graphics.DrawPath(border, path);

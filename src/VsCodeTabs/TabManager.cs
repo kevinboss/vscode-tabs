@@ -14,8 +14,8 @@ internal sealed class TabManager : IDisposable
     readonly List<TabGroup> groups = [];
     readonly List<IntPtr> hooks = [];
     readonly Queue<(uint Event, IntPtr Hwnd)> pending = new();
-    readonly Dictionary<(IntPtr Hwnd, bool Focused), Color> backgrounds = [];
-    readonly Dictionary<bool, Color> lastBackgrounds = [];
+    readonly Dictionary<(IntPtr Hwnd, bool Focused), TitleColors> titleColors = [];
+    readonly Dictionary<bool, TitleColors> lastTitleColors = [];
     readonly Native.WinEventProc proc;
     readonly System.Windows.Forms.Timer pruneTimer = new() { Interval = 1000 };
     readonly System.Windows.Forms.Timer dragTimer = new() { Interval = 10 };
@@ -46,15 +46,30 @@ internal sealed class TabManager : IDisposable
 
     public Dictionary<bool, TitleBar> TitleBars { get; } = [];
 
-    public void RememberBackground(IntPtr hwnd, bool focused, Color background)
+    public void RememberColors(IntPtr hwnd, bool focused, TitleColors colors)
     {
-        backgrounds[(hwnd, focused)] = background;
-        lastBackgrounds[focused] = background;
+        if (titleColors.TryGetValue((hwnd, focused), out var known) && known != colors)
+            ForgetColors();
+        titleColors[(hwnd, focused)] = colors;
+        lastTitleColors[focused] = colors;
     }
 
-    public Color? Background(IntPtr hwnd, bool focused) =>
-        backgrounds.TryGetValue((hwnd, focused), out var background) ? background
-        : lastBackgrounds.TryGetValue(focused, out background) ? background
+    public void ThemeChanged()
+    {
+        ForgetColors();
+        foreach (var group in groups)
+            group.ScheduleMeasure();
+    }
+
+    void ForgetColors()
+    {
+        titleColors.Clear();
+        lastTitleColors.Clear();
+    }
+
+    public TitleColors? Colors(IntPtr hwnd, bool focused) =>
+        titleColors.TryGetValue((hwnd, focused), out var colors) ? colors
+        : lastTitleColors.TryGetValue(focused, out colors) ? colors
         : null;
 
     public Transitions Transitions { get; } = new();
@@ -340,8 +355,8 @@ internal sealed class TabManager : IDisposable
                 group.Remove(hwnd);
             DropIfEmpty(group);
         }
-        foreach (var key in backgrounds.Keys.Where(key => !Native.IsWindow(key.Hwnd)).ToList())
-            backgrounds.Remove(key);
+        foreach (var key in titleColors.Keys.Where(key => !Native.IsWindow(key.Hwnd)).ToList())
+            titleColors.Remove(key);
 
         idleSeconds = groups.Sum(group => group.Tabs.Count) == 0 ? idleSeconds + 1 : 0;
         if (idleSeconds >= IdleSecondsBeforeExit)

@@ -389,17 +389,22 @@ internal sealed class TabGroup : IDisposable
     public void ShowFocus()
     {
         Interlocked.Increment(ref focusWatch);
-        if (active != IntPtr.Zero && manager.Background(active, Native.GetForegroundWindow() == active) is { } background)
-            strip.ApplyTheme(background);
+        if (active != IntPtr.Zero && manager.Colors(active, Native.GetForegroundWindow() == active) is { } colors)
+            strip.ApplyTheme(colors);
     }
 
     public void FollowFocus()
     {
         var window = active;
         var previous = strip.Colors.Background;
-        if (window == IntPtr.Zero || manager.Background(window, Native.GetForegroundWindow() == window) is not { } expected
-            || expected.ToArgb() == previous.ToArgb())
+        if (window == IntPtr.Zero || manager.Colors(window, Native.GetForegroundWindow() == window) is not { } colors)
             return;
+        var expected = colors.Background;
+        if (expected.ToArgb() == previous.ToArgb())
+        {
+            strip.ApplyTheme(colors);
+            return;
+        }
         var bounds = strip.ScreenBounds;
         if (bounds.IsEmpty)
         {
@@ -418,7 +423,7 @@ internal sealed class TabGroup : IDisposable
             ui.Post(_ =>
             {
                 if (focusWatch == watch && active == window)
-                    strip.ApplyTheme(expected);
+                    strip.ApplyTheme(colors);
             }, null);
         });
     }
@@ -593,7 +598,7 @@ internal sealed class TabGroup : IDisposable
             Dip(DefaultTitleBarHeightDip, scale),
             Dip(DefaultLeftInsetDip, scale),
             Dip(DefaultRightInsetDip, scale),
-            Color.Empty);
+            default);
 
     public void ScheduleMeasure()
     {
@@ -614,9 +619,9 @@ internal sealed class TabGroup : IDisposable
                 measureTimer.Start();
             return;
         }
-        manager.RememberBackground(active, Native.GetForegroundWindow() == active, bar.Background);
-        strip.ApplyTheme(bar.Background);
-        var geometry = bar with { Background = Color.Empty };
+        manager.RememberColors(active, Native.GetForegroundWindow() == active, bar.Colors);
+        strip.ApplyTheme(bar.Colors);
+        var geometry = bar with { Colors = default };
         if (manager.TitleBars.TryGetValue(zoomed, out var known) && known == geometry)
         {
             geometryChanges = 0;

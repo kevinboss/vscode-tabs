@@ -3,7 +3,9 @@ using System.Runtime.InteropServices;
 
 namespace VsCodeTabs;
 
-internal readonly record struct TitleBar(int Top, int Height, int LeftInset, int RightInset, Color Background);
+internal readonly record struct TitleColors(Color Background, Color Foreground, Color Edge);
+
+internal readonly record struct TitleBar(int Top, int Height, int LeftInset, int RightInset, TitleColors Colors);
 
 internal static class TitleBarProbe
 {
@@ -102,7 +104,23 @@ internal static class TitleBarProbe
         if (leftEnd == 0 || rightStart == width)
             return null;
 
-        return new TitleBar(top, bottom - top, leftEnd + S(8), width - rightStart + S(ButtonGapDip) + S(8), Color.FromArgb(background));
+        var edge = bottom < height
+            ? Color.FromArgb(Mode(Enumerable.Range(0, width).Select(x => At(x, bottom)).ToList()))
+            : Color.Empty;
+
+        var glyphs = columns.Where(x => x >= rightStart)
+            .SelectMany(x => Enumerable.Range(top, bottom - top).Select(y => At(x, y)))
+            .Where(pixel => !IsBackground(pixel))
+            .ToList();
+        var foreground = Color.Empty;
+        if (glyphs.Count > 0)
+        {
+            var strongest = glyphs.Max(pixel => Distance(pixel, background));
+            foreground = Color.FromArgb(Mode(glyphs.Where(pixel => Distance(pixel, background) * 4 >= strongest * 3).ToList()));
+        }
+
+        return new TitleBar(top, bottom - top, leftEnd + S(8), width - rightStart + S(ButtonGapDip) + S(8),
+            new TitleColors(Color.FromArgb(background), foreground, edge));
     }
 
     static int[]? Capture(IntPtr hwnd, Size size, Rectangle region)

@@ -10,11 +10,12 @@ internal sealed class TabStrip : Form
     const TextFormatFlags MeasureFormat = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
 
     const int AppIconSlotDip = 35;
+    const int AppIconDip = 16;
 
     readonly TabGroup group;
     readonly ToolTip toolTip = new() { ShowAlways = true };
     readonly List<(IntPtr Hwnd, Rectangle Tab, Rectangle Close, TabLabel Label)> layout = [];
-    Palette palette = Palette.From(Color.FromArgb(0x18, 0x18, 0x18));
+    Palette palette = Palette.From(Color.FromArgb(0x18, 0x18, 0x18), Color.Empty, Color.Empty);
     Rectangle plus;
     float scale = 1f;
     Font nameFont;
@@ -190,13 +191,13 @@ internal sealed class TabStrip : Form
             Native.ShowWindow(Handle, Native.SW_HIDE);
     }
 
-    public void ApplyTheme(Color background)
+    public void ApplyTheme(TitleColors colors)
     {
-        var next = Palette.From(background);
+        var next = Palette.From(colors.Background, colors.Foreground, colors.Edge);
         if (next == palette)
             return;
         palette = next;
-        BackColor = background;
+        BackColor = colors.Background;
         Invalidate();
     }
 
@@ -217,19 +218,36 @@ internal sealed class TabStrip : Form
         graphics.Clear(palette.Background);
         DrawAppIcon(graphics);
 
+        bool IsActive(int index) => group.PendingTab ? layout[index].Hwnd == IntPtr.Zero : layout[index].Hwnd == group.Active;
+        bool IsHovered(int index) => index == hoverIndex && layout[index].Hwnd != IntPtr.Zero;
+        bool IsHighlighted(int index) => IsActive(index) || IsHovered(index);
+
+        using (var separator = new SolidBrush(palette.Separator))
+        {
+            for (var i = 0; i + 1 < layout.Count; i++)
+            {
+                if (IsHighlighted(i) || IsHighlighted(i + 1))
+                    continue;
+                var x = (layout[i].Tab.Right + layout[i + 1].Tab.Left) / 2;
+                var height = S(16);
+                graphics.FillRectangle(separator, x, (ClientSize.Height - height) / 2, Math.Max(1, S(1)), height);
+            }
+        }
+
         for (var i = 0; i < layout.Count; i++)
         {
             var (hwnd, tab, close, label) = layout[i];
             var isPlaceholder = hwnd == IntPtr.Zero;
-            var isActive = group.PendingTab ? isPlaceholder : hwnd == group.Active;
-            var isHovered = i == hoverIndex && !isPlaceholder;
+            var isActive = IsActive(i);
+            var isHovered = IsHovered(i);
             var opacity = isPlaceholder || hwnd == group.LoadingTab
                 ? PulseOpacity(Environment.TickCount64 - group.LoadingSince)
                 : 1.0;
             Color Fade(Color color) => opacity >= 1.0 ? color : Blend(color, palette.Background, opacity);
 
             if (isActive || isHovered)
-                FillRounded(graphics, Fade(isActive ? palette.ActiveBackground : palette.HoverBackground), tab);
+                FillRounded(graphics, Fade(isActive ? palette.ActiveBackground : palette.HoverBackground), tab,
+                    isActive && !palette.ActiveBorder.IsEmpty ? Fade(palette.ActiveBorder) : Color.Empty);
 
             var textRight = isActive || isHovered ? close.Left - S(4) : tab.Right - S(10);
             var nameBounds = Rectangle.FromLTRB(tab.Left + S(10), tab.Top, textRight, tab.Bottom);
@@ -414,7 +432,7 @@ internal sealed class TabStrip : Form
     {
         layout.Clear();
         var tabs = group.PendingTab ? group.Tabs.Append(IntPtr.Zero).ToList() : group.Tabs;
-        var height = S(22);
+        var height = Math.Min(S(24), ClientSize.Height - S(4));
         var top = (ClientSize.Height - height) / 2;
         var gap = S(2);
         var closeSize = S(18);
@@ -422,11 +440,12 @@ internal sealed class TabStrip : Form
         var labels = tabs.Select(hwnd => TitleParser.Label(hwnd == IntPtr.Zero ? "Visual Studio Code" : Win.Title(hwnd))).ToList();
         var widths = labels.Select(TabWidth).ToList();
 
-        var available = Math.Max(0, ClientSize.Width - iconArea - plusSize - S(12) - gap * tabs.Count);
+        var iconMargin = (S(AppIconSlotDip) - S(AppIconDip)) / 2;
+        var x = iconMargin + S(AppIconDip) + iconMargin;
+        var available = Math.Max(0, ClientSize.Width - x - plusSize - S(8) - gap * tabs.Count);
         if (widths.Count > 0 && widths.Sum() > available)
             widths = Enumerable.Repeat(available / widths.Count, widths.Count).ToList();
 
-        var x = iconArea + S(4);
         for (var i = 0; i < tabs.Count; i++)
         {
             var tab = new Rectangle(x, top, widths[i], height);
@@ -440,7 +459,7 @@ internal sealed class TabStrip : Form
 
     void DrawAppIcon(Graphics graphics)
     {
-        var size = S(16);
+        var size = S(AppIconDip);
         if (iconArea < size || owner == IntPtr.Zero || Win.ProcessPath(owner) is not { } path)
             return;
         if (appIconKey != (path, size))
@@ -475,18 +494,24 @@ internal sealed class TabStrip : Form
         return insert ? layout.Count : Math.Max(0, layout.Count - 1);
     }
 
-    void FillRounded(Graphics graphics, Color color, Rectangle bounds)
+    void FillRounded(Graphics graphics, Color color, Rectangle bounds, Color border = default)
     {
-        var diameter = S(4) * 2;
+        var outline = border.IsEmpty ? bounds : new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+        var diameter = S(5) * 2;
         using var path = new GraphicsPath();
-        path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
-        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
-        path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.AddArc(outline.Left, outline.Top, diameter, diameter, 180, 90);
+        path.AddArc(outline.Right - diameter, outline.Top, diameter, diameter, 270, 90);
+        path.AddArc(outline.Right - diameter, outline.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(outline.Left, outline.Bottom - diameter, diameter, diameter, 90, 90);
         path.CloseFigure();
         using var brush = new SolidBrush(color);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.FillPath(brush, path);
+        if (!border.IsEmpty)
+        {
+            using var pen = new Pen(border, Math.Max(1f, (float)Math.Floor(scale)));
+            graphics.DrawPath(pen, path);
+        }
         graphics.SmoothingMode = SmoothingMode.Default;
     }
 
@@ -522,7 +547,7 @@ internal sealed class TabStrip : Form
     void DrawGlyph(Graphics graphics, Rectangle bounds, Color color, bool cross)
     {
         using var pen = new Pen(color, Math.Max(1f, scale));
-        var inset = bounds.Width * (cross ? 0.3f : 0.27f);
+        var inset = bounds.Width * (cross ? 0.26f : 0.2f);
         var left = bounds.Left + inset;
         var top = bounds.Top + inset;
         var right = bounds.Right - inset;

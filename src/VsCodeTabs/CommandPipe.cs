@@ -45,6 +45,9 @@ internal static class CommandPipe
             case "handover":
                 manager.HandOver();
                 break;
+            case "theme":
+                manager.ThemeChanged();
+                break;
         }
     }
 
