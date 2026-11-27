@@ -29,6 +29,7 @@ internal sealed class TabGroup : IDisposable
     IntPtr settling;
     long settlingUntil;
     int failedMeasurements;
+    int geometryChanges;
     int focusWatch;
 
     public TabGroup(TabManager manager)
@@ -558,10 +559,14 @@ internal sealed class TabGroup : IDisposable
         strip.ApplyTheme(bar.Background);
         var geometry = bar with { Background = Color.Empty };
         if (manager.TitleBars.TryGetValue(zoomed, out var known) && known == geometry)
+        {
+            geometryChanges = 0;
             return;
+        }
         manager.TitleBars[zoomed] = geometry;
         PlaceStrip();
-        measureTimer.Stop();
+        if (++geometryChanges >= MeasureAttempts)
+            measureTimer.Stop();
     }
 
     static int Dip(int value, float scale) => (int)Math.Round(value * scale);

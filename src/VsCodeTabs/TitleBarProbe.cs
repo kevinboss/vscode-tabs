@@ -8,6 +8,7 @@ internal readonly record struct TitleBar(int Top, int Height, int LeftInset, int
 internal static class TitleBarProbe
 {
     const int Tolerance = 30;
+    const int ButtonGapDip = 60;
 
     public static TitleBar? Measure(IntPtr hwnd, Rectangle visible, float scale, Rectangle exclude)
     {
@@ -85,7 +86,7 @@ internal static class TitleBarProbe
 
         var rightStart = width;
         gap = 0;
-        for (var x = width - 1; x >= width / 2 && gap <= S(60); x--)
+        for (var x = width - 1; x >= width / 2 && gap <= S(ButtonGapDip); x--)
         {
             if (occupied[x])
             {
@@ -101,7 +102,7 @@ internal static class TitleBarProbe
         if (leftEnd == 0 || rightStart == width)
             return null;
 
-        return new TitleBar(top, bottom - top, leftEnd + S(8), width - rightStart + S(8), Color.FromArgb(background));
+        return new TitleBar(top, bottom - top, leftEnd + S(8), width - rightStart + S(ButtonGapDip) + S(8), Color.FromArgb(background));
     }
 
     static int[]? Capture(IntPtr hwnd, Size size, Rectangle region)
