@@ -4,6 +4,17 @@ All notable changes to the VS Code Tabs extension are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-27
+
+### Added
+- Opening a tab with the + button shows the new tab right away and fades it in and out until VS Code has loaded the window. The current tab stays on screen in the meantime, instead of an empty grey window.
+
+### Fixed
+- The tab strip no longer covers VS Code's layout buttons at the right end of the title bar.
+- Closing a tab switches to the tab next to it instead of one Windows picks, and no longer shows the desktop for a moment.
+- A closed tab leaves the strip immediately instead of after VS Code has finished shutting the window down.
+- When VS Code asks whether to save changes in a tab you are closing, the tab comes back with the dialog centred on it.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added
@@ -34,6 +45,7 @@ First Marketplace release.
 - On first start the extension offers to set the four VS Code settings the tab bar needs.
 - The helper is bundled as a self-contained exe. When the extension updates, the newer exe takes over from the running one without restoring the grouped windows.
 
+[0.4.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.4.0
 [0.2.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.2.0
 [0.1.2]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.1.2
 [0.1.1]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.1.1
