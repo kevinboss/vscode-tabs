@@ -19,6 +19,8 @@ internal static class TitleParser
         return FolderPath(parts) ?? (parts.Count > 0 ? parts[^1] : title);
     }
 
+    public static string? Folder(string title) => FolderPath(Parts(title));
+
     static List<string> Parts(string title)
     {
         var parts = title.TrimStart('●', ' ').Split(" - ").ToList();

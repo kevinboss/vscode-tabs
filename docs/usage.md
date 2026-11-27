@@ -44,6 +44,8 @@ Version" on the same page.
 - Click a tab to switch to that window, click its close button or middle-click
   the tab to close it, and click `+` to open a new VS Code window in the current
   group.
+- Closing the window itself (the title bar X, `Alt+F4`, `Ctrl+Shift+W` or File > Close Window) closes every tab in its group, like closing a browser window.
+- Each VS Code installation gets its own groups: windows of a user install, a system install and a portable copy are never mixed into one group.
 - `Ctrl+Tab` and `Ctrl+Shift+Tab` cycle forward and backward through window tabs
   on Windows outside Quick Open, including from the integrated terminal once the
   settings prompt is applied. If the helper is not running, both shortcuts fall

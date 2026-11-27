@@ -6,7 +6,6 @@ internal sealed class TabManager : IDisposable
     const int RememberedFolders = 100;
     const int GrabLimitDip = 100;
     const int NewWindowQuietMilliseconds = 15000;
-    const int CloseQuietMilliseconds = 10000;
 
     static readonly string StateDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "vscode-tabs");
@@ -76,8 +75,8 @@ internal sealed class TabManager : IDisposable
 
     public void Start()
     {
-        var group = CreateGroup();
-        _ = group.Strip.Handle;
+        var first = CreateGroup();
+        _ = first.Strip.Handle;
         context = new WindowsFormsSynchronizationContext();
         savedOrder = File.Exists(orderPath) ? File.ReadAllLines(orderPath).ToList() : [];
 
@@ -88,19 +87,26 @@ internal sealed class TabManager : IDisposable
                 windows.Add(hwnd);
             return true;
         }, IntPtr.Zero);
-        group.Load(windows);
+        var installations = new List<(TabGroup Group, List<IntPtr> Members)>();
+        foreach (var members in windows.GroupBy(hwnd => Win.ProcessPath(hwnd) ?? "", StringComparer.OrdinalIgnoreCase))
+            installations.Add((installations.Count == 0 ? first : CreateGroup(), members.ToList()));
+        foreach (var (group, members) in installations)
+            group.Load(members);
 
         const uint flags = Native.WINEVENT_OUTOFCONTEXT | Native.WINEVENT_SKIPOWNPROCESS;
         hooks.Add(Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_MINIMIZEEND, IntPtr.Zero, proc, 0, 0, flags));
         hooks.Add(Native.SetWinEventHook(Native.EVENT_OBJECT_CREATE, Native.EVENT_OBJECT_NAMECHANGE, IntPtr.Zero, proc, 0, 0, flags));
         pruneTimer.Start();
 
-        var shown = windows.Where(hwnd => !Win.IsStashed(hwnd)).ToList();
         var foreground = Native.GetForegroundWindow();
-        var first = shown.Contains(foreground) ? foreground : shown.Concat(windows).FirstOrDefault();
-        if (first != IntPtr.Zero)
-            group.Activate(first, focus: false);
-        focused = group;
+        foreach (var (group, members) in installations)
+        {
+            var shown = members.Where(hwnd => !Win.IsStashed(hwnd)).ToList();
+            var pick = shown.Contains(foreground) ? foreground : shown.Concat(members).FirstOrDefault();
+            if (pick != IntPtr.Zero)
+                group.Activate(pick, focus: false);
+        }
+        focused = groups.FirstOrDefault(group => group.Contains(foreground)) ?? first;
     }
 
     public void Cycle(int step)
@@ -154,18 +160,6 @@ internal sealed class TabManager : IDisposable
         Application.Exit();
     }
 
-    public void Closing(string folder)
-    {
-        var foreground = Native.GetForegroundWindow();
-        var identity = folder.TrimEnd('\\', '/');
-        List<IntPtr> matches = identity.Length == 0 ? [] : groups.SelectMany(group => group.Tabs)
-            .Where(hwnd => string.Equals(TitleParser.Identity(Win.Title(hwnd)), identity, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var hwnd = matches.Contains(foreground) ? foreground : matches.FirstOrDefault(foreground);
-        if (GroupOf(hwnd) is { Tabs.Count: > 1 })
-            Transitions.Hold(hwnd, CloseQuietMilliseconds);
-    }
-
     public int Rank(string identity)
     {
         var index = savedOrder.IndexOf(identity);
@@ -195,8 +189,9 @@ internal sealed class TabManager : IDisposable
 
     TabGroup? GroupOf(IntPtr hwnd) => groups.FirstOrDefault(group => group.Contains(hwnd));
 
-    TabGroup Target() =>
-        focused is not null && groups.Contains(focused) ? focused : groups.FirstOrDefault() ?? CreateGroup();
+    TabGroup Target(IntPtr hwnd) =>
+        focused is not null && groups.Contains(focused) && focused.Accepts(hwnd) ? focused
+        : groups.FirstOrDefault(group => group.Accepts(hwnd)) ?? CreateGroup();
 
     TabGroup CreateGroup()
     {
@@ -298,7 +293,7 @@ internal sealed class TabManager : IDisposable
                 }
                 else if (Win.IsVsCodeMain(hwnd))
                 {
-                    focused = Target();
+                    focused = Target(hwnd);
                     focused.Activate(hwnd, focus: false);
                 }
                 else
@@ -312,7 +307,7 @@ internal sealed class TabManager : IDisposable
 
             case Native.EVENT_OBJECT_SHOW:
                 if (group is null && Native.IsWindowVisible(hwnd) && Win.IsVsCodeMain(hwnd))
-                    Target().Activate(hwnd, focus: true);
+                    Target(hwnd).Activate(hwnd, focus: true);
                 break;
 
             case Native.EVENT_OBJECT_HIDE:
@@ -435,7 +430,7 @@ internal sealed class TabManager : IDisposable
     }
 
     TabGroup? DropTargetAt(TabGroup source, Point cursor) =>
-        groups.FirstOrDefault(other => other != source && other.AcceptsDrop(cursor));
+        groups.FirstOrDefault(other => other != source && other.AcceptsDrop(cursor) && other.Accepts(dragWindow));
 
     void ShowDropTarget(TabGroup? target, int index)
     {

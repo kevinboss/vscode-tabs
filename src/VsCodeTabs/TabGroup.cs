@@ -25,6 +25,7 @@ internal sealed class TabGroup : IDisposable
     readonly Dictionary<IntPtr, string> identities = [];
     readonly System.Windows.Forms.Timer measureTimer = new() { Interval = 300 };
     readonly System.Windows.Forms.Timer coverTimer = new() { Interval = 100 };
+    readonly System.Windows.Forms.Timer closeTimer = new() { Interval = ClosingTimeoutMilliseconds };
 
     Cover? cover;
     bool pendingTab;
@@ -51,6 +52,7 @@ internal sealed class TabGroup : IDisposable
             MeasureTitleBar();
         };
         coverTimer.Tick += (_, _) => CheckCover();
+        closeTimer.Tick += (_, _) => FinishGroupClose();
     }
 
     public IReadOnlyList<IntPtr> Tabs => tabs;
@@ -60,6 +62,13 @@ internal sealed class TabGroup : IDisposable
     public TabStrip Strip => strip;
 
     public bool Contains(IntPtr hwnd) => tabs.Contains(hwnd) || closing.ContainsKey(hwnd);
+
+    public bool Accepts(IntPtr hwnd)
+    {
+        var member = tabs.FirstOrDefault(Native.IsWindow);
+        return member == IntPtr.Zero
+            || string.Equals(Win.ProcessPath(member), Win.ProcessPath(hwnd), StringComparison.OrdinalIgnoreCase);
+    }
 
     public void Load(IEnumerable<IntPtr> windows)
     {
@@ -143,12 +152,15 @@ internal sealed class TabGroup : IDisposable
 
     public void BeginDrag(IntPtr hwnd, Point grab) => manager.BeginDrag(this, hwnd, grab);
 
-    public void NewTab()
+    public async void NewTab()
     {
         manager.MarkFocused(this);
         CoverActive();
         var executable = active != IntPtr.Zero ? Win.ProcessPath(active) : null;
+        var folder = active != IntPtr.Zero ? TitleParser.Folder(Win.Title(active)) : null;
         Native.AllowSetForegroundWindow(Native.ASFW_ANY);
+        if (await CommandPipe.RequestNewWindow(folder ?? ""))
+            return;
         var start = new ProcessStartInfo(executable ?? "code", "--new-window")
         {
             UseShellExecute = false,
@@ -235,12 +247,15 @@ internal sealed class TabGroup : IDisposable
         DropCover();
         coverTimer.Dispose();
         measureTimer.Dispose();
+        closeTimer.Dispose();
         strip.Dispose();
         spare.Dispose();
     }
 
     public void OnForeground(IntPtr hwnd)
     {
+        if (closeTimer.Enabled && stashed.Contains(hwnd))
+            return;
         Reinstate(hwnd);
         if (hwnd == active)
             PlaceStrip();
@@ -250,6 +265,7 @@ internal sealed class TabGroup : IDisposable
 
     public void OnOwnedForeground(IntPtr owner, IntPtr dialog)
     {
+        closeTimer.Stop();
         Reinstate(owner);
         Activate(owner, focus: false);
         if (Win.ClassName(dialog) != "#32770")
@@ -266,10 +282,22 @@ internal sealed class TabGroup : IDisposable
 
     public void OnHidden(IntPtr hwnd)
     {
-        var index = tabs.IndexOf(hwnd);
-        if (hwnd != active || index < 0 || tabs.Count < 2)
+        if (hwnd != active || !tabs.Contains(hwnd) || tabs.Count < 2)
             return;
-        Activate(Neighbour(index), focus: true);
+        closeTimer.Stop();
+        closeTimer.Start();
+        foreach (var tab in tabs.Where(tab => tab != hwnd).ToList())
+            Native.PostMessage(tab, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    void FinishGroupClose()
+    {
+        closeTimer.Stop();
+        if (active != IntPtr.Zero && Native.IsWindowVisible(active))
+            return;
+        var next = tabs.FirstOrDefault(tab => tab != active && Native.IsWindow(tab));
+        if (next != IntPtr.Zero)
+            Activate(next, focus: true);
     }
 
     public void OnMoveSizeStart() => settling = IntPtr.Zero;
@@ -512,7 +540,7 @@ internal sealed class TabGroup : IDisposable
         {
             if (closed || tabs.Count == 0)
                 active = IntPtr.Zero;
-            if (tabs.Count > 0)
+            if (tabs.Count > 0 && !closeTimer.Enabled)
                 Activate(tabs[Math.Min(index, tabs.Count - 1)], focus: closed);
         }
 
@@ -535,7 +563,7 @@ internal sealed class TabGroup : IDisposable
         if (Native.IsIconic(hwnd) || Native.IsZoomed(hwnd))
             Native.ShowWindow(hwnd, Native.SW_SHOWNOACTIVATE);
         frame = bounds;
-        Win.SetVisibleBounds(hwnd, frame, IntPtr.Zero, Native.SWP_NOZORDER | Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
+        Win.SetVisibleBounds(hwnd, frame, Native.HWND_TOP, Native.SWP_NOACTIVATE | Native.SWP_SHOWWINDOW);
         Native.SetForegroundWindow(hwnd);
         PlaceStrip();
         strip.Invalidate();

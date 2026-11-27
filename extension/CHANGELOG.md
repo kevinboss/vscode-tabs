@@ -4,6 +4,16 @@ All notable changes to the VS Code Tabs extension are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Closing a window with its X, `Alt+F4`, `Ctrl+Shift+W` or File > Close Window closes all tabs in its group, like closing a browser window. The tab's own close button still closes a single tab.
+- Windows of different VS Code installations, such as a user install and a portable copy, go into separate groups.
+- The + button asks VS Code itself to open the new window, so it opens in the same VS Code installation and profile as the group, including portable copies and other profiles.
+
+### Fixed
+- A tab dragged out of a group could land behind the group's window instead of in front of it.
+
 ## [0.6.1] - 2026-11-27
 
 ### Fixed
