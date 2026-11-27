@@ -12,6 +12,7 @@ internal sealed class TabGroup : IDisposable
     const int SettleMilliseconds = 2000;
     const int QuietMilliseconds = 300;
     const int CloseQuietMilliseconds = 10000;
+    const int ClosingTimeoutMilliseconds = 15000;
     const int FollowMilliseconds = 300;
 
     readonly TabManager manager;
@@ -19,6 +20,7 @@ internal sealed class TabGroup : IDisposable
     TabStrip spare;
     readonly List<IntPtr> tabs = [];
     readonly HashSet<IntPtr> stashed = [];
+    readonly Dictionary<IntPtr, int> closing = [];
     readonly Dictionary<IntPtr, string> identities = [];
     readonly System.Windows.Forms.Timer measureTimer = new() { Interval = 300 };
 
@@ -47,7 +49,7 @@ internal sealed class TabGroup : IDisposable
 
     public TabStrip Strip => strip;
 
-    public bool Contains(IntPtr hwnd) => tabs.Contains(hwnd);
+    public bool Contains(IntPtr hwnd) => tabs.Contains(hwnd) || closing.ContainsKey(hwnd);
 
     public void Load(IEnumerable<IntPtr> windows)
     {
@@ -81,11 +83,36 @@ internal sealed class TabGroup : IDisposable
 
     public void Close(IntPtr hwnd)
     {
-        if (hwnd != active)
-            Activate(hwnd, focus: true);
-        if (tabs.Count > 1)
+        var index = tabs.IndexOf(hwnd);
+        if (index >= 0 && tabs.Count > 1)
+        {
+            if (hwnd == active)
+                Activate(Neighbour(index), focus: true);
+            tabs.RemoveAt(index);
+            closing[hwnd] = index;
             manager.Transitions.Hold(hwnd, CloseQuietMilliseconds);
+            var timeout = new System.Windows.Forms.Timer { Interval = ClosingTimeoutMilliseconds };
+            timeout.Tick += (_, _) =>
+            {
+                timeout.Dispose();
+                Reinstate(hwnd);
+            };
+            timeout.Start();
+            PlaceStrip();
+            strip.Invalidate();
+        }
         Native.PostMessage(hwnd, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    IntPtr Neighbour(int index) => tabs[index + 1 < tabs.Count ? index + 1 : index - 1];
+
+    void Reinstate(IntPtr hwnd)
+    {
+        if (!closing.Remove(hwnd, out var index) || !Native.IsWindow(hwnd))
+            return;
+        tabs.Insert(Math.Min(index, tabs.Count), hwnd);
+        PlaceStrip();
+        strip.Invalidate();
     }
 
     public void Move(int from, int to)
@@ -151,6 +178,7 @@ internal sealed class TabGroup : IDisposable
 
     public void Release()
     {
+        closing.Clear();
         measureTimer.Dispose();
         strip.Dispose();
         spare.Dispose();
@@ -158,10 +186,35 @@ internal sealed class TabGroup : IDisposable
 
     public void OnForeground(IntPtr hwnd)
     {
+        Reinstate(hwnd);
         if (hwnd == active)
             PlaceStrip();
         else
             Activate(hwnd, focus: false);
+    }
+
+    public void OnOwnedForeground(IntPtr owner, IntPtr dialog)
+    {
+        Reinstate(owner);
+        Activate(owner, focus: false);
+        if (Win.ClassName(dialog) != "#32770")
+            return;
+        var area = Native.IsZoomed(owner) ? Win.WorkArea(owner) : Win.VisibleBounds(owner);
+        Native.GetWindowRect(dialog, out var rect);
+        var bounds = rect.ToRectangle();
+        if (area.Contains(bounds))
+            return;
+        Native.SetWindowPos(dialog, IntPtr.Zero, area.Left + (area.Width - bounds.Width) / 2,
+            area.Top + (area.Height - bounds.Height) / 2, 0, 0,
+            Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+    }
+
+    public void OnHidden(IntPtr hwnd)
+    {
+        var index = tabs.IndexOf(hwnd);
+        if (hwnd != active || index < 0 || tabs.Count < 2)
+            return;
+        Activate(Neighbour(index), focus: true);
     }
 
     public void OnMoveSizeStart() => settling = IntPtr.Zero;
@@ -363,8 +416,13 @@ internal sealed class TabGroup : IDisposable
 
     public void Remove(IntPtr hwnd)
     {
-        if (!tabs.Contains(hwnd))
+        if (!Contains(hwnd))
             return;
+        if (closing.Remove(hwnd))
+        {
+            stashed.Remove(hwnd);
+            identities.Remove(hwnd);
+        }
         Win.Forget(hwnd);
         if (strip.IsDisposed)
             strip = new TabStrip(this);

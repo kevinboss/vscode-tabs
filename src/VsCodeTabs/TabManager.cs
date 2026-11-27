@@ -223,6 +223,7 @@ internal sealed class TabManager : IDisposable
             case Native.EVENT_SYSTEM_MINIMIZESTART:
             case Native.EVENT_SYSTEM_MINIMIZEEND:
             case Native.EVENT_OBJECT_DESTROY:
+            case Native.EVENT_OBJECT_HIDE:
             case Native.EVENT_OBJECT_LOCATIONCHANGE:
             case Native.EVENT_OBJECT_NAMECHANGE:
                 if (GroupOf(hwnd) is null)
@@ -274,6 +275,12 @@ internal sealed class TabManager : IDisposable
                     focused = group;
                     group.OnForeground(hwnd);
                 }
+                else if (Native.GetWindow(hwnd, Native.GW_OWNER) is var owner && owner != IntPtr.Zero
+                    && GroupOf(owner) is { } ownerGroup && ownerGroup.Active != owner)
+                {
+                    focused = ownerGroup;
+                    ownerGroup.OnOwnedForeground(owner, hwnd);
+                }
                 else if (Win.IsVsCodeMain(hwnd))
                 {
                     focused = Target();
@@ -291,6 +298,11 @@ internal sealed class TabManager : IDisposable
             case Native.EVENT_OBJECT_SHOW:
                 if (group is null && Native.IsWindowVisible(hwnd) && Win.IsVsCodeMain(hwnd))
                     Target().Activate(hwnd, focus: true);
+                break;
+
+            case Native.EVENT_OBJECT_HIDE:
+                if (group is not null && !Native.IsWindowVisible(hwnd))
+                    group.OnHidden(hwnd);
                 break;
 
             case Native.EVENT_OBJECT_DESTROY:

@@ -156,7 +156,7 @@ internal static class Win
 
     static FrameMargins MarginsOf(IntPtr hwnd) => margins.TryGetValue(hwnd, out var known) ? known : lastMargins;
 
-    static string ClassName(IntPtr hwnd)
+    public static string ClassName(IntPtr hwnd)
     {
         var buffer = new StringBuilder(64);
         Native.GetClassName(hwnd, buffer, buffer.Capacity);
