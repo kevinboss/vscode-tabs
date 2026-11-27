@@ -4,7 +4,7 @@ All notable changes to the VS Code Tabs extension are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-11-27
 
 ### Changed
 - Closing a window with its X, `Alt+F4`, `Ctrl+Shift+W` or File > Close Window closes all tabs in its group, like closing a browser window. The tab's own close button still closes a single tab.
