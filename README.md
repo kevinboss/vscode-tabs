@@ -24,6 +24,8 @@ x64, keeping one window visible per group while parking the rest off-screen and
 off the taskbar. The extension prepares the title bar and starts a bundled
 helper (`vscode-tabs.exe`) that tracks the windows and draws the tab strip.
 
+![Four VS Code windows as tabs in one title bar, switched by clicking the tabs and with Ctrl+Tab and Ctrl+Shift+Tab](docs/media/switching.gif)
+
 Install from the
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kevinboss.vscode-tabs)
 (Windows x64, VS Code 1.90.0 or later):
@@ -39,6 +41,29 @@ the title bar. Click a tab or press `Ctrl+Tab` and `Ctrl+Shift+Tab` to switch
 windows, and click `+` to open a new window in the current group. See
 [docs/usage.md](docs/usage.md) for managing tabs, stopping the helper, settings,
 and limitations.
+Closing the window itself closes every tab in its group, while a tab's close button closes just that window.
+
+## In action
+
+Open a folder from the integrated terminal, and it joins the group as a new tab.
+
+![Running code ..\billing-api in the integrated terminal opens the folder as a new tab in the same title bar](docs/media/grouping.gif)
+
+Click `+` for a new window in the group, and close it again from its tab.
+
+![Clicking + opens a new VS Code window as a tab, and its close button closes it again](docs/media/new-close.gif)
+
+Drag tabs to reorder them.
+
+![Dragging the docs tab to the front of the tab bar and back to the end](docs/media/reorder.gif)
+
+Drag a tab out to give it its own window, and drag it back into a tab bar to group it again.
+
+![Dragging the billing-api tab out into its own window and back into the first window's tab bar](docs/media/drag.gif)
+
+The tab bar takes its colours from VS Code's own title bar, so it follows any colour theme.
+
+![Arrowing through light themes in the theme picker while the tab bar changes colour with each preview, then Esc back to the dark theme](docs/media/theme.gif)
 
 ## How to contribute
 
