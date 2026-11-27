@@ -4,6 +4,16 @@ All notable changes to the VS Code Tabs extension are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project uses [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-27
+
+### Changed
+- Tabs follow VS Code's current tab look: rounded tabs, a thin outline around the active tab, faint dividers between the other tabs and a lighter + button.
+- Tab colours come from your colour theme, read from the window itself, so the strip matches dark, light and tinted themes without any setting.
+- The first tab sits right after the VS Code icon, at the same distance the icon keeps from the window edge.
+
+### Fixed
+- After switching colour theme, switching tabs no longer shows the previous theme's colours for a moment.
+
 ## [0.4.0] - 2026-11-27
 
 ### Added
@@ -45,6 +55,7 @@ First Marketplace release.
 - On first start the extension offers to set the four VS Code settings the tab bar needs.
 - The helper is bundled as a self-contained exe. When the extension updates, the newer exe takes over from the running one without restoring the grouped windows.
 
+[0.6.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.6.0
 [0.4.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.4.0
 [0.2.0]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.2.0
 [0.1.2]: https://github.com/kevinboss/vscode-tabs/releases/tag/v0.1.2
